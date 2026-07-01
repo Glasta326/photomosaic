@@ -26,6 +26,31 @@ pub struct Config {
     pub mutation_strength: f32,
 }
 
+impl Config {
+    pub fn display(&self) -> String {
+        return format!(
+            "
+Config:
+    target: {}
+    atlas: {}
+    seed: {}
+    surival threshold: {}
+    evo cycles: {}
+    candidates: {}
+    total images: {}
+    mutation str: {}",
+            self.target_fp.display(),
+            self.atlas_fp.display(),
+            self.seed,
+            self.survival_threshold,
+            self.evo_cycles,
+            self.candidates_per_generation,
+            self.total_images,
+            self.mutation_strength
+        );
+    }
+}
+
 // Parse program arguments and collect program config into a datastruct
 pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     // If -h or -v are passed, we just print value and exit program
@@ -37,6 +62,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         return Ok(None);
     }
 
+    // Default values
     let mut target_file_path = PathBuf::default();
     let mut atlas_file_path = PathBuf::default();
     let mut seed = 0;
