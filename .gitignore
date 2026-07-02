@@ -1,6 +1,7 @@
 target/
 .zed/
 debug/
+
 **/*.rs.bk
 *.pdb
 **/mutants.out*/

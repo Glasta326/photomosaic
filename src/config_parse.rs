@@ -1,11 +1,14 @@
-use std::{path::PathBuf, result};
+use std::{path::PathBuf};
 
 pub struct Config {
     /// File path to the target image being constructed
     pub target_fp: PathBuf,
 
     /// File path to the atlas texture
-    pub atlas_fp: PathBuf,
+    pub atlas_texture_fp: PathBuf,
+
+    /// File path to the atlas json. If not provided, will default to atlas_texture_fp, but with .json extension
+    pub atlas_json_fp: PathBuf,
 
     /// Random seed
     pub seed: u32,
@@ -32,7 +35,8 @@ impl Config {
             "
 Config:
     target: {}
-    atlas: {}
+    atlas texture: {}
+    atlas json: {}
     seed: {}
     surival threshold: {}
     evo cycles: {}
@@ -40,7 +44,8 @@ Config:
     total images: {}
     mutation str: {}",
             self.target_fp.display(),
-            self.atlas_fp.display(),
+            self.atlas_texture_fp.display(),
+            self.atlas_json_fp.display(),
             self.seed,
             self.survival_threshold,
             self.evo_cycles,
@@ -52,7 +57,9 @@ Config:
 }
 
 // Parse program arguments and collect program config into a datastruct
-pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
+// NOTE: in the future, we will have a proper dialogue box with a settings window, so there will always be input for every single value
+// As of right now, it just errors if you dont provide a target file or atlas texture file, but this will get resolved with the dialogue box
+pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {    
     // If -h or -v are passed, we just print value and exit program
     if std::env::args_os().any(|a| a == "-h" || a == "--help") {
         print_help();
@@ -65,6 +72,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     // Default values
     let mut target_file_path = PathBuf::default();
     let mut atlas_file_path = PathBuf::default();
+    let mut atlas_json_path = PathBuf::default();
     let mut seed = 0;
     let mut survival_threshold = 0.9;
     let mut evo_cycles = 10;
@@ -88,6 +96,13 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     arg.display()
                 ))?;
                 atlas_file_path = PathBuf::from(a);
+            }
+            "-aj" | "--atlas_json" => {
+                let a = args.next().ok_or(format!(
+                    "{} was used, but no atlas json file path was provided.\nHint: use -h or --help for info",
+                    arg.display()
+                ))?;
+                atlas_json_path = PathBuf::from(a);
             }
             "-s" | "--seed" => {
                 let s = args.next().ok_or(format!(
@@ -137,9 +152,16 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         }
     }
 
+    // If the atlas json path is still default, then use the same path as the atlas texture
+    if atlas_json_path == PathBuf::default() {
+        atlas_json_path = atlas_file_path.clone();
+        atlas_json_path.set_extension("json");
+    }
+    
     return Ok(Some(Config {
         target_fp: target_file_path,
-        atlas_fp: atlas_file_path,
+        atlas_texture_fp: atlas_file_path,
+        atlas_json_fp: atlas_json_path,
         seed,
         survival_threshold,
         evo_cycles,
