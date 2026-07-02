@@ -1,7 +1,10 @@
 use image::{ImageBuffer, Rgb};
 use wgpu::include_wgsl;
 
-use crate::config_parse;
+use crate::{
+    config_parse,
+    data_reader::{self, AtlasEntry},
+};
 
 pub struct compute {
     pub device: wgpu::Device,
@@ -37,8 +40,6 @@ pub struct compute {
     /// Changes after every cycle
     pub output_score_buffer: Option<wgpu::Buffer>,
 }
-
-pub struct ComputeSystemInitData {}
 
 impl compute {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
@@ -143,14 +144,13 @@ impl compute {
         });
     }
 
+    // Initalise the data buffers with our constant stuff like the atlas and target image
     pub fn buffer_init(
         &mut self,
         cfg: config_parse::Config,
         atlas_texture: ImageBuffer<Rgb<u8>, Vec<u8>>,
-        //atlas_keys: Vec<AtlasKey>,
-        target_texture: ImageBuffer<Rgb<u8>, Vec<u8>>
+        atlas_keys: Vec<AtlasEntry>,
+        target_texture: ImageBuffer<Rgb<u8>, Vec<u8>>,
     ) {
-
-        
     }
 }
