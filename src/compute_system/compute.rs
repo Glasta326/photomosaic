@@ -16,7 +16,7 @@ pub struct Compute {
     adapter: wgpu::Adapter,
     bind_group_layout: wgpu::BindGroupLayout,
 
-    pub buffers: Option<Buffers>,
+    pub buffers: Buffers,
 }
 
 struct Buffers {
@@ -47,7 +47,12 @@ struct Buffers {
 }
 
 impl Compute {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_init(
+        cfg: &Config,
+        atlas_texture: RgbaImage,
+        atlas_entries: Vec<AtlasEntry>,
+        target_texture: RgbaImage,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let _descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         let _instance = wgpu::Instance::new(_descriptor);
         let _adapter =
@@ -131,6 +136,15 @@ impl Compute {
             cache: None,
         });
 
+        let buffers = Self::buffer_init(
+            &_device,
+            &_queue,
+            &cfg,
+            atlas_texture,
+            atlas_entries,
+            target_texture,
+        );
+
         // TODO: this kind of sucks
         // mayb put all the buffers into their own struct?
         return Ok(Compute {
@@ -140,17 +154,18 @@ impl Compute {
             instance: _instance,
             adapter: _adapter,
             bind_group_layout: bind_group_layout,
-            buffers: None,
+            buffers,
         });
     }
 
-    pub fn buffer_init(
-        &mut self,
+    fn buffer_init(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         cfg: &Config,
         atlas_texture: RgbaImage,
         atlas_entries: Vec<AtlasEntry>,
         target_texture: RgbaImage,
-    ) {
+    ) -> Buffers {
         let atlas_texture_size = wgpu::Extent3d {
             width: atlas_texture.width(),
             height: atlas_texture.height(),
@@ -178,7 +193,7 @@ impl Compute {
                 & !align_mask)
                 .max(wgpu::COPY_BUFFER_ALIGNMENT);
 
-        let atlas_texture_buffer = self.device.create_texture(&wgpu::TextureDescriptor {
+        let atlas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Atlas texture buffer"),
             size: atlas_texture_size,
             mip_level_count: 1,
@@ -189,15 +204,13 @@ impl Compute {
             view_formats: &[],
         });
 
-        let atlas_entry_buffer =
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Atlas entry buffer"),
-                    contents: bytemuck::cast_slice(&atlas_entries),
-                    usage: wgpu::BufferUsages::STORAGE,
-                });
+        let atlas_entry_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Atlas entry buffer"),
+            contents: bytemuck::cast_slice(&atlas_entries),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
 
-        let target_texture_buffer = self.device.create_texture(&wgpu::TextureDescriptor {
+        let target_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Target texture buffer"),
             size: canvas_texture_size,
             mip_level_count: 1,
@@ -209,7 +222,7 @@ impl Compute {
         });
 
         // Upload both static textures
-        self.queue.write_texture(
+        queue.write_texture(
             atlas_texture_buffer.as_image_copy(),
             bytemuck::cast_slice(atlas_texture.as_raw()),
             wgpu::TexelCopyBufferLayout {
@@ -219,7 +232,7 @@ impl Compute {
             },
             atlas_texture_size,
         );
-        self.queue.write_texture(
+        queue.write_texture(
             target_texture_buffer.as_image_copy(),
             bytemuck::cast_slice(target_texture.as_raw()),
             wgpu::TexelCopyBufferLayout {
@@ -230,7 +243,7 @@ impl Compute {
             canvas_texture_size,
         );
 
-        let canvas_texture_buffer = self.device.create_texture(&wgpu::TextureDescriptor {
+        let canvas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Canvas texture buffer"),
             size: canvas_texture_size,
             mip_level_count: 1,
@@ -243,27 +256,27 @@ impl Compute {
             view_formats: &[],
         });
 
-        let candidate_data_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+        let candidate_data_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Candidate data buffer"),
             size: padded_candidate_buffer_size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let output_score_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+        let output_score_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output score buffer"),
             size: padded_output_score_buffer_size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
-        self.buffers = Some(Buffers {
+        return Buffers {
             input_atlas_texture: atlas_texture_buffer,
             input_atlas_entry_buffer: atlas_entry_buffer,
             input_target_texture: target_texture_buffer,
             input_canvas_texture: canvas_texture_buffer,
             input_candidate_buffer: candidate_data_buffer,
             output_score_buffer,
-        });
+        };
     }
 }
