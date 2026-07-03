@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+use crate::candidate::Candidate;
+
+mod candidate;
 mod compute_system;
 mod config_parse;
 mod data_reader;
@@ -12,10 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     println!("{}", cfg.display());
 
-    let d = data_reader::read_atlas_data(cfg)?;
+    let (atlas_texture, atlas_entries) = data_reader::read_atlas_data(cfg)?;
 
-    for &e in &d.1 {
-        e.display();
+    for &e in &atlas_entries {
+        println!("{}",e);
     }
+
+
     return Ok(());
 }

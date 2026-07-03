@@ -11,7 +11,7 @@ struct Candidate{
     x_offset: u32,
     y_offset: u32,
     scale: f32,
-    rot: f32
+    rot: f32,
 };
 
 @group(0) @binding(0) var input_texture: texture_2d<f32>;

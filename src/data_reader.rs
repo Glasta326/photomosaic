@@ -73,9 +73,10 @@ pub struct AtlasEntry {
     pub height: u32,
     pub rotated: u32,
 }
-impl AtlasEntry {
-    pub fn display(&self) {
-        println!(
+impl std::fmt::Display for AtlasEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "x: {}\ny: {}\nw: {}\nh: {}\nr: {}",
             self.x, self.y, self.width, self.height, self.rotated
         )
@@ -123,4 +124,51 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
     // NOTE: the atlas entries will be in a completley random order by this point, but that shouldn't matter
     // the candidates are all random id's anyway, so it's just randomly accessing the array, which nullifies any ordering or disordering it already had
     return Ok(entries);
+}
+
+pub fn read_target_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error::Error>> {
+    let provided_target_texture_fp = cfg.target_texture.clone();
+
+    // Make sure file has a filetype ext
+    if provided_target_texture_fp.extension().is_none() {
+        return Err(format!(
+            "Provided target texture path: '{}' has no file extension!",
+            provided_target_texture_fp.display()
+        )
+        .into());
+    }
+
+    // Fail on unsupported file type, collect all supported ones and display them to user
+    let ext = provided_target_texture_fp
+        .extension()
+        .unwrap()
+        .to_str()
+        .unwrap(); // .unwrap() is ok here because we guarantee something exists above
+    if !SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
+        let display_text = SUPPORTED_EXTENSIONS
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Provided target texture path has unsupported file type!: '{}' Supported types are: [{}]",
+            ext,
+            display_text
+        )
+        .into());
+    }
+
+    // Check if the provided filepath even links to anything
+    if !std::fs::exists(&provided_target_texture_fp)? {
+        return Err(format!(
+            "Could not find target texture file at provided path: '{}'",
+            provided_target_texture_fp.display()
+        )
+        .into());
+    }
+
+    // Attempt to load image file
+    let target_texture = image::open(provided_target_texture_fp)?;
+
+    return Ok(target_texture.to_rgba8());
 }

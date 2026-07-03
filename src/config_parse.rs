@@ -2,7 +2,7 @@ use std::{path::PathBuf};
 
 pub struct Config {
     /// File path to the target image being constructed
-    pub target_fp: PathBuf,
+    pub target_texture: PathBuf,
 
     /// File path to the atlas texture
     pub atlas_texture_fp: PathBuf,
@@ -11,19 +11,19 @@ pub struct Config {
     pub atlas_json_fp: PathBuf,
 
     /// Random seed
-    pub seed: u32,
+    pub seed: usize,
 
     /// Any candidates below this threshold% are removed from the evolution cycle
     pub survival_threshold: f32,
 
     /// The number of evolutionary cycles for each image placed to the canvas
-    pub evo_cycles: u32,
+    pub evo_cycles: usize,
 
     /// The program will run this many candidates when evolving one image
-    pub candidates_per_generation: u32,
+    pub candidates_per_generation: usize,
 
     /// The total number of images that will be placed onto the canvas overall
-    pub total_images: u32,
+    pub total_images: usize,
 
     /// Controls how strong the mutation effects are, 0.0 means no change and 1.0 means children and maximially different
     pub mutation_strength: f32,
@@ -43,7 +43,7 @@ Config:
     candidates: {}
     total images: {}
     mutation str: {}",
-            self.target_fp.display(),
+            self.target_texture.display(),
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),
             self.seed,
@@ -73,11 +73,11 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut target_file_path = PathBuf::default();
     let mut atlas_file_path = PathBuf::default();
     let mut atlas_json_path = PathBuf::default();
-    let mut seed = 0;
+    let mut seed: usize = 0;
     let mut survival_threshold = 0.9;
-    let mut evo_cycles = 10;
-    let mut candidates_per_gen = 500;
-    let mut total_images = 1000;
+    let mut evo_cycles: usize = 10;
+    let mut candidates_per_gen: usize = 500;
+    let mut total_images: usize = 1000;
     let mut mutation_strength = 0.1;
 
     let mut args = std::env::args_os().skip(1);
@@ -109,7 +109,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     "{} was used, but no seed value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                seed = s.to_string_lossy().into_owned().parse::<u32>()?;
+                seed = s.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-st" | "--survival_threshold" => {
                 let st = args.next().ok_or(format!(
@@ -123,21 +123,21 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     "{} was used, but no cycle value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                evo_cycles = ec.to_string_lossy().into_owned().parse::<u32>()?;
+                evo_cycles = ec.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-cpg" | "--candidates" => {
                 let cpg = args.next().ok_or(format!(
                     "{} was used, but no candidate count value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                candidates_per_gen = cpg.to_string_lossy().into_owned().parse::<u32>()?;
+                candidates_per_gen = cpg.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-ti" | "--total_images" => {
                 let ti = args.next().ok_or(format!(
                     "{} was used, but no total image value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                total_images = ti.to_string_lossy().into_owned().parse::<u32>()?;
+                total_images = ti.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-ms" | "--mutation_strength" => {
                 let ms = args.next().ok_or(format!(
@@ -159,7 +159,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     }
     
     return Ok(Some(Config {
-        target_fp: target_file_path,
+        target_texture: target_file_path,
         atlas_texture_fp: atlas_file_path,
         atlas_json_fp: atlas_json_path,
         seed,
