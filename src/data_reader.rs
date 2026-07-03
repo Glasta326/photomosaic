@@ -9,10 +9,12 @@ const SUPPORTED_EXTENSIONS: [&'static str; 3] = ["png", "webp", "jpg"];
 
 /// Gets the Texture of the atlas and the atlas entry metadata
 pub fn read_atlas_data(
-    cfg: Config,
+    cfg: &Config,
 ) -> Result<(RgbaImage, Vec<AtlasEntry>), Box<dyn std::error::Error>> {
     let atlas_texture = read_atlas_texture(&cfg)?;
     let atlas_json = read_atlas_json(&cfg)?;
+
+    
 
     return Ok((atlas_texture, atlas_json));
 }

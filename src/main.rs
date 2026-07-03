@@ -15,12 +15,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     println!("{}", cfg.display());
 
-    let (atlas_texture, atlas_entries) = data_reader::read_atlas_data(cfg)?;
+    let (atlas_texture, atlas_entries) = data_reader::read_atlas_data(&cfg)?;
+    println!(
+        "Loaded {} by {} texture atlas with {} entries",
+        atlas_texture.width(),
+        atlas_texture.height(),
+        atlas_entries.len()
+    );
 
-    for &e in &atlas_entries {
-        println!("{}",e);
-    }
+    let target_texture = data_reader::read_target_texture(&cfg)?;
+    println!(
+        "Loaded {} by {} target texture: [{}]",
+        target_texture.width(),
+        target_texture.height(),
+        cfg.target_texture.file_name().unwrap().display()
+    );
 
+    let compute = compute_system::compute::Compute::new_init(
+        &cfg,
+        atlas_texture,
+        atlas_entries,
+        target_texture,
+    )?;
 
     return Ok(());
 }
