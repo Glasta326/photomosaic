@@ -1,8 +1,8 @@
-use image::{ImageBuffer, Rgb, RgbaImage};
+use image::RgbaImage;
 use wgpu::{TextureUsages, include_wgsl, util::DeviceExt};
 
 use crate::{
-    candidate,
+    candidate::{self, Candidate},
     config_parse::{self, Config},
     data_reader::{self, AtlasEntry},
 };
@@ -44,6 +44,9 @@ struct Buffers {
     /// This is the buffer the final color difference score is put into for a candiate.
     /// Changes after every cycle
     pub output_score_buffer: wgpu::Buffer,
+
+    /// This buffer is for reading data back to the cpu memory
+    pub readback_buffer: wgpu::Buffer,
 }
 
 impl Compute {
@@ -78,42 +81,72 @@ impl Compute {
             _device.create_shader_module(include_wgsl!("../shaders/score_shader.wgsl"));
 
         // Could be created automatically from the shader file, but i've heard it's better to do it manually
-        // TODO: update this for the shader later
         let bind_group_layout =
             _device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Bind group layout"),
                 entries: &[
-                    // Input texture, so in this case: The atlas texture
+                    // Atlas texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: (wgpu::TextureSampleType::Float {
-                                filterable: (false),
-                            }),
-                            view_dimension: (wgpu::TextureViewDimension::D2),
-                            multisampled: (false),
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
                         },
                         count: None,
                     },
-                    // Output texture
+                    // Atlas entries
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            access: (wgpu::StorageTextureAccess::WriteOnly),
-                            format: (wgpu::TextureFormat::Rgba8Unorm),
-                            view_dimension: (wgpu::TextureViewDimension::D2),
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     },
-                    // Input data buffer, so our atlas metadata structs
+                    // Target texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // Canvas texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // Candidate buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
-                            ty: (wgpu::BufferBindingType::Storage { read_only: (true) }),
-                            has_dynamic_offset: (false),
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // Output score buffer
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
                             min_binding_size: None,
                         },
                         count: None,
@@ -270,6 +303,13 @@ impl Compute {
             mapped_at_creation: false,
         });
 
+        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Readback buffer"),
+            size: padded_output_score_buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
         return Buffers {
             input_atlas_texture: atlas_texture_buffer,
             input_atlas_entry_buffer: atlas_entry_buffer,
@@ -277,6 +317,109 @@ impl Compute {
             input_canvas_texture: canvas_texture_buffer,
             input_candidate_buffer: candidate_data_buffer,
             output_score_buffer,
+            readback_buffer,
         };
+    }
+
+    pub fn run(
+        &self,
+        cfg: &Config,
+        canvas: RgbaImage,
+        candidates: Vec<Candidate>,
+    ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                // Atlas texture
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self
+                            .buffers
+                            .input_atlas_texture
+                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                // Atlas entries
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.buffers.input_atlas_entry_buffer.as_entire_binding(),
+                },
+                // Target texture
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self
+                            .buffers
+                            .input_target_texture
+                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                // Canvas texture
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(
+                        &self
+                            .buffers
+                            .input_canvas_texture
+                            .create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                // Candidate buffer
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.buffers.input_candidate_buffer.as_entire_binding(),
+                },
+                // Output score buffer
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.buffers.output_score_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Encoder"),
+            });
+
+        // Set up the compute pass
+        // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
+        {
+            let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Compute pass"),
+                timestamp_writes: None,
+            });
+
+            compute_pass.set_pipeline(&self.pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+
+            compute_pass.dispatch_workgroups(workgroup_count as u32, 0, 0);
+        }
+
+        // Get data into a mapped buffer so CPU can read it
+        encoder.copy_buffer_to_buffer(
+            &self.buffers.output_score_buffer,
+            0,
+            &self.buffers.readback_buffer,
+            0,
+            self.buffers.output_score_buffer.size(),
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        // Collect the buffer into a float vec and return it
+        let result_slice = self.buffers.readback_buffer.slice(std::ops::RangeFull);
+        result_slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device.poll(wgpu::PollType::wait_indefinitely())?;
+
+        let result: Vec<f32> =
+            bytemuck::allocation::pod_collect_to_vec(&result_slice.get_mapped_range());
+
+        self.buffers.readback_buffer.unmap();
+
+        return Ok(result);
     }
 }
