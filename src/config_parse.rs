@@ -1,5 +1,8 @@
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
+/// Collection of all program configuration settings & useful data based on program configuration that is not explicitly specified
+/// For example, the dimensions of the target and canvas images, while not specified as program args,
+/// are still inlcuded here as they are based on the images the user provided
 pub struct Config {
     /// File path to the target image being constructed
     pub target_texture: PathBuf,
@@ -11,7 +14,7 @@ pub struct Config {
     pub atlas_json_fp: PathBuf,
 
     /// Random seed
-    pub seed: usize,
+    pub seed: u64,
 
     /// Any candidates below this threshold% are removed from the evolution cycle
     pub survival_threshold: f32,
@@ -27,6 +30,23 @@ pub struct Config {
 
     /// Controls how strong the mutation effects are, 0.0 means no change and 1.0 means children and maximially different
     pub mutation_strength: f32,
+
+    /// Extra program data not extrapolated from data specified by the user
+    pub extra_data: ConfigData,
+}
+pub struct ConfigData {
+    pub atlas_dimensions: (u32, u32),
+    pub target_dimensions: (u32, u32),
+    pub child_count: u32,
+}
+impl ConfigData {
+    pub fn init(candidate_count: usize, threshold: f32) -> Self {
+        return ConfigData {
+            atlas_dimensions: (0, 0),
+            target_dimensions: (0, 0),
+            child_count: (candidate_count as f32 / threshold).round() as u32 - 1, // -1 to account for the parent staying alive
+        };
+    }
 }
 
 impl Config {
@@ -56,10 +76,27 @@ Config:
     }
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            target_texture: PathBuf::from("debug/testing_input/atlas.png"),
+            atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.json"),
+            atlas_json_fp: PathBuf::from("debug/testing_input/target.png"),
+            seed: rand::random::<u64>(),
+            survival_threshold: 0.9,
+            evo_cycles: 10,
+            candidates_per_generation: 500,
+            total_images: 1000,
+            mutation_strength: 0.2,
+            extra_data: ConfigData::init(500, 0.9),
+        }
+    }
+}
+
 // Parse program arguments and collect program config into a datastruct
 // NOTE: in the future, we will have a proper dialogue box with a settings window, so there will always be input for every single value
 // As of right now, it just errors if you dont provide a target file or atlas texture file, but this will get resolved with the dialogue box
-pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {    
+pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     // If -h or -v are passed, we just print value and exit program
     if std::env::args_os().any(|a| a == "-h" || a == "--help") {
         print_help();
@@ -73,7 +110,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut target_file_path = PathBuf::default();
     let mut atlas_file_path = PathBuf::default();
     let mut atlas_json_path = PathBuf::default();
-    let mut seed: usize = 0;
+    let mut seed = rand::random::<u64>(); // Default is random. Set-seeds are boring and only good for sharing
     let mut survival_threshold = 0.9;
     let mut evo_cycles: usize = 10;
     let mut candidates_per_gen: usize = 500;
@@ -109,7 +146,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     "{} was used, but no seed value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                seed = s.to_string_lossy().into_owned().parse::<usize>()?;
+                seed = s.to_string_lossy().into_owned().parse::<u64>()?;
             }
             "-st" | "--survival_threshold" => {
                 let st = args.next().ok_or(format!(
@@ -157,7 +194,12 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         atlas_json_path = atlas_file_path.clone();
         atlas_json_path.set_extension("json");
     }
-    
+
+    // Calculate extra miscelaneous data from user specified configuration
+    // TODO: this is bad
+    // the data in here is half calculated on init and half done later
+    let extra_data = ConfigData::init(candidates_per_gen, survival_threshold);
+
     return Ok(Some(Config {
         target_texture: target_file_path,
         atlas_texture_fp: atlas_file_path,
@@ -168,6 +210,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         candidates_per_generation: candidates_per_gen,
         total_images,
         mutation_strength,
+        extra_data: extra_data,
     }));
 }
 

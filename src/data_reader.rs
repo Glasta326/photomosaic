@@ -125,6 +125,8 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
 
     // NOTE: the atlas entries will be in a completley random order by this point, but that shouldn't matter
     // the candidates are all random id's anyway, so it's just randomly accessing the array, which nullifies any ordering or disordering it already had
+    // Update: oh fuck what about set seed though then it isnt random
+    // TODO: this
     return Ok(entries);
 }
 

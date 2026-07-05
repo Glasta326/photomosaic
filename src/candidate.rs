@@ -1,8 +1,17 @@
+use std::f64::consts::PI;
+
+use rand::{RngExt, rngs::StdRng};
+
+use crate::{
+    config_parse::Config,
+    utils::math_utils::{self, wrap_angle},
+};
+
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Candidate {
     /// The ID of the texture this candidate referrs to in the atlas
-    pub texture_id: usize,
+    pub texture_id: u32,
 
     /// The x position of this candidate texture
     pub pos_x: u32,
@@ -23,5 +32,99 @@ impl std::fmt::Display for Candidate {
             "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}",
             self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale
         )
+    }
+}
+
+impl Candidate {
+    pub fn new(id: u32, x: u32, y: u32, rot: f32, scale: f32) -> Self {
+        return Candidate {
+            texture_id: id,
+            pos_x: x,
+            pos_y: y,
+            rotation: rot,
+            scale,
+        };
+    }
+
+    pub fn mutate_new(&self, cfg: &Config, rng: &mut StdRng) -> Self {
+        // Generate a random position inside the canvas,
+        // then, lerp between our current position x,y to the new position x,y individiually to get the final position
+        let random_pos = math_utils::random_point_2d(cfg.extra_data.target_dimensions, rng);
+        let new_pos = (
+            math_utils::lerp(
+                self.pos_x as f32,
+                random_pos.0 as f32,
+                cfg.mutation_strength,
+            ) as u32,
+            math_utils::lerp(
+                self.pos_y as f32,
+                random_pos.1 as f32,
+                cfg.mutation_strength,
+            ) as u32,
+        );
+
+        // For angle, we want to either rotate left or right, and an amount decided by a range, with the limit on that range being affected by mutation strength
+        // so for example, if we are at angle 0.0, we randomly choose to rotate clockwise, and mutation strength is 0.2, so we pick an amount to rotate
+        // between 0 and +PI * 0.2
+        let random_off = math_utils::coinflip(rng)
+            * rng.random_range(0.0..PI as f32 * cfg.mutation_strength) as f32;
+        let new_ang = math_utils::wrap_angle(self.rotation + random_off);
+
+        // Scale is slightly different due to being a boundless quantity
+        // Instead of being based on any absolute limits like pi and the size of the canvas, we instead make it so the scale is a relative multiplier to the parent's scale
+
+        // mutation strength 0.0 means 2.0 mult, and strength 1.0 means 1.0 mult
+        let mult = 2.0 - (1.0 - cfg.mutation_strength);
+        let mut new_scale = self.scale;
+        if rng.random_bool(0.5) {
+            new_scale *= mult;
+        } else {
+            new_scale /= mult;
+        }
+
+        return Candidate::new(self.texture_id, new_pos.0, new_pos.1, new_ang, new_scale);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::f32::consts::PI;
+
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn candidate_mutation_divergence() {
+        let mut cfg = Config::default();
+        cfg.extra_data.atlas_dimensions = (500, 500);
+        cfg.extra_data.target_dimensions = (500, 500);
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
+        let mut c = Candidate::new(0, 0, 0, 0.0, 0.0);
+
+        // Hypothetically if you set this high enough it will eventually fail due to chance
+        // a value of ~ 1000 means that if it were to be overly biased, lets say it doubles 75% of the time
+        // it would reach a value with 225 digits, so if it's still not f32::inf by then, that means it's good enough
+        for _i in 0..1000 {
+            c = c.mutate_new(&cfg, &mut rng);
+        }
+
+        assert!(
+            (c.pos_x, c.pos_y) <= (500, 500),
+            "Candidate position drifted outside of canvas bounds!\nCandidate pos: [x: {}, y: {}]",
+            c.pos_x,
+            c.pos_y
+        );
+
+        assert!(
+            c.rotation > -PI && c.rotation < PI,
+            "Candidate rotation exceeded ±PI\nCandidate rot: [{}]",
+            c.rotation
+        );
+
+        assert!(
+            c.scale > f32::MIN && c.scale < f32::MAX,
+            "Candidate scale diverged to zero or infinity!\nCandidate scale: [{}]",
+            c.scale
+        );
     }
 }

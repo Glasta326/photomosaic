@@ -12,3 +12,4 @@ bytemuck = { version = "1.22.0", features = ["extern_crate_alloc"] }
 image = "0.25.2"
 serde_json = { version = "1.0.150", default-features = false, features = ["alloc"] }
 serde = { version = "1.0.228", features = ["derive"] }
+rand = "0.10.2"
