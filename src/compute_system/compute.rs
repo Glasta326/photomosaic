@@ -1,5 +1,5 @@
 use image::RgbaImage;
-use wgpu::{TextureUsages, include_wgsl, util::DeviceExt};
+use wgpu::{TexelCopyBufferLayout, TextureUsages, include_wgsl, util::DeviceExt};
 
 use crate::{
     candidate::{self, Candidate},
@@ -324,9 +324,29 @@ impl Compute {
     pub fn run(
         &self,
         cfg: &Config,
-        canvas: RgbaImage,
-        candidates: Vec<Candidate>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        
+        // Fill our candidate and canvas buffers
+        // self.queue.write_buffer(
+        //     &self.buffers.input_candidate_buffer,
+        //     0,
+        //     bytemuck::cast_slice(candidates),
+        // );
+        // self.queue.write_texture(
+        //     self.buffers.input_canvas_texture.as_image_copy(),
+        //     bytemuck::cast_slice(canvas.as_raw()),
+        //     TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(4 * canvas.width()),
+        //         rows_per_image: None,
+        //     },
+        //     wgpu::Extent3d {
+        //         width: canvas.width(),
+        //         height: canvas.height(),
+        //         depth_or_array_layers: 1,
+        //     },
+        // );
+
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Bind group"),
             layout: &self.bind_group_layout,
@@ -397,7 +417,7 @@ impl Compute {
             compute_pass.set_pipeline(&self.pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
 
-            compute_pass.dispatch_workgroups(workgroup_count as u32, 0, 0);
+            compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
         }
 
         // Get data into a mapped buffer so CPU can read it

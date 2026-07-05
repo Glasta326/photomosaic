@@ -38,5 +38,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         target_texture,
     )?;
 
+    let x = compute.run(&cfg)?;
+    println!("{:#?}", x);
+    let x = compute.run(&cfg)?;
+    println!("{:#?}", x);
+    
     return Ok(());
 }
