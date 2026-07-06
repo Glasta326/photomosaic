@@ -43,7 +43,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = gpu::GpuContext::init(atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
 
-    let x = score_shader.run(&cfg, &context);
+    let x = score_shader.run(&cfg, &context)?;
+    println!("{:#?}", x);
+    let x = score_shader.run(&cfg, &context)?;
     println!("{:#?}", x);
 
     return Ok(());

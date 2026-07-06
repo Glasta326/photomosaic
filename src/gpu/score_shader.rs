@@ -7,7 +7,7 @@ use crate::{
 
 pub struct ScoreShader {
     pipeline: wgpu::ComputePipeline,
-    bind_group_layout: wgpu::BindGroupLayout,
+    bind_group: wgpu::BindGroup,
 
     buffers: ScoreBuffers,
 }
@@ -133,9 +133,62 @@ impl ScoreShader {
 
         let buffers = ScoreBuffers::new(cfg, context);
 
+        let bind_group = context
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Score shader: Bind group"),
+                layout: &bind_group_layout,
+                entries: &[
+                    // Atlas texture
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(
+                            &context
+                                .buffers
+                                .input_atlas_texture
+                                .create_view(&wgpu::TextureViewDescriptor::default()),
+                        ),
+                    },
+                    // Atlas entries
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: context.buffers.input_atlas_entry_buffer.as_entire_binding(),
+                    },
+                    // Target texture
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(
+                            &context
+                                .buffers
+                                .input_target_texture
+                                .create_view(&wgpu::TextureViewDescriptor::default()),
+                        ),
+                    },
+                    // Canvas texture
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(
+                            &buffers
+                                .input_canvas_texture
+                                .create_view(&wgpu::TextureViewDescriptor::default()),
+                        ),
+                    },
+                    // Candidate buffer
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: buffers.input_candidate_buffer.as_entire_binding(),
+                    },
+                    // Output score buffer
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: buffers.output_score_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
         return Ok(ScoreShader {
             pipeline,
-            bind_group_layout,
+            bind_group,
             buffers,
         });
     }
@@ -168,60 +221,6 @@ impl ScoreShader {
         //     },
         // );
 
-        let bind_group = context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Score shader: Bind group"),
-                layout: &self.bind_group_layout,
-                entries: &[
-                    // Atlas texture
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &context
-                                .buffers
-                                .input_atlas_texture
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                        ),
-                    },
-                    // Atlas entries
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: context.buffers.input_atlas_entry_buffer.as_entire_binding(),
-                    },
-                    // Target texture
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::TextureView(
-                            &context
-                                .buffers
-                                .input_target_texture
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                        ),
-                    },
-                    // Canvas texture
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self
-                                .buffers
-                                .input_canvas_texture
-                                .create_view(&wgpu::TextureViewDescriptor::default()),
-                        ),
-                    },
-                    // Candidate buffer
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: self.buffers.input_candidate_buffer.as_entire_binding(),
-                    },
-                    // Output score buffer
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: self.buffers.output_score_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
         let mut encoder = context
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -232,18 +231,18 @@ impl ScoreShader {
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
             let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
-            println!("Score true workgroup count: {}", &workgroup_count);
+            println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),
                 timestamp_writes: None,
             });
 
             compute_pass.set_pipeline(&self.pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.set_bind_group(0, &self.bind_group, &[]);
 
             compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
         }
-        
+
         // Get data into a mapped buffer so CPU can read it
         encoder.copy_buffer_to_buffer(
             &self.buffers.output_score_buffer,
