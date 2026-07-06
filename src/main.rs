@@ -4,9 +4,9 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 use crate::utils::math_utils::{self, lerp};
 
 mod candidate;
-mod compute_system;
 mod config_parse;
 mod data_reader;
+mod gpu;
 mod utils;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,26 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cfg.extra_data.atlas_dimensions = atlas_texture.dimensions();
     cfg.extra_data.target_dimensions = target_texture.dimensions();
 
-    // let compute = compute_system::compute::Compute::new_init(
-    //     &cfg,
-    //     atlas_texture,
-    //     atlas_entries,
-    //     target_texture,
-    // )?;
+    let context = gpu::GpuContext::init(atlas_texture, atlas_entries, target_texture)?;
+    let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
 
-    // let x = compute.run(&cfg)?;
-    // println!("{:#?}", x);
-    // let x = compute.run(&cfg)?;
-    // println!("{:#?}", x);
-    cfg.mutation_strength = 1.0;
-    let mut c = candidate::Candidate::new(0, 100, 100, 0.0, 1.0);
-
-    for i in 0..1000 {
-        c = c.mutate_new(&cfg, &mut rng);
-        println!("{}", c);
-    }
-
-
+    let x = score_shader.run(&cfg, &context);
+    println!("{:#?}", x);
 
     return Ok(());
 }
