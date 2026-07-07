@@ -197,29 +197,29 @@ impl ScoreShader {
         &self,
         cfg: &Config,
         context: &GpuContext,
-        // candidates: &Vec<Candidate>,
-        // canvas: &RgbaImage,
+        candidates: &Vec<Candidate>,
+        canvas: &RgbaImage,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         // Fill our candidate and canvas buffers
-        // context.queue.write_buffer(
-        //     &self.buffers.input_candidate_buffer,
-        //     0,
-        //     bytemuck::cast_slice(candidates),
-        // );
-        // context.queue.write_texture(
-        //     self.buffers.input_canvas_texture.as_image_copy(),
-        //     bytemuck::cast_slice(canvas.as_raw()),
-        //     TexelCopyBufferLayout {
-        //         offset: 0,
-        //         bytes_per_row: Some(4 * canvas.width()),
-        //         rows_per_image: None,
-        //     },
-        //     wgpu::Extent3d {
-        //         width: canvas.width(),
-        //         height: canvas.height(),
-        //         depth_or_array_layers: 1,
-        //     },
-        // );
+        context.queue.write_buffer(
+            &self.buffers.input_candidate_buffer,
+            0,
+            bytemuck::cast_slice(candidates),
+        );
+        context.queue.write_texture(
+            self.buffers.input_canvas_texture.as_image_copy(),
+            bytemuck::cast_slice(canvas.as_raw()),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * canvas.width()),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: canvas.width(),
+                height: canvas.height(),
+                depth_or_array_layers: 1,
+            },
+        );
 
         let mut encoder = context
             .device
@@ -231,6 +231,7 @@ impl ScoreShader {
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
             let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
+            let workgroup_count: u32 = (1 as u32).div_ceil(64);
             println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),

@@ -14,8 +14,6 @@ pub fn read_atlas_data(
     let atlas_texture = read_atlas_texture(&cfg)?;
     let atlas_json = read_atlas_json(&cfg)?;
 
-    
-
     return Ok((atlas_texture, atlas_json));
 }
 
@@ -121,12 +119,11 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
     let map: HashMap<String, AtlasEntry> = serde_json::from_str(&buffer)?;
 
     // Note the cloned() here, otherwise we get a vec of references
-    let entries: Vec<AtlasEntry> = map.values().cloned().collect();
+    let mut entries: Vec<AtlasEntry> = map.values().cloned().collect();
 
-    // NOTE: the atlas entries will be in a completley random order by this point, but that shouldn't matter
-    // the candidates are all random id's anyway, so it's just randomly accessing the array, which nullifies any ordering or disordering it already had
-    // Update: oh fuck what about set seed though then it isnt random
-    // TODO: this
+    // Due to the hashmap step, the entries are in a shuffled order, so re-sort them here
+    entries.sort_by(|a, b| (b.width * b.height).cmp(&(a.width * a.height)));
+
     return Ok(entries);
 }
 
