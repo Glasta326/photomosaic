@@ -231,7 +231,6 @@ impl ScoreShader {
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
             let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
-            let workgroup_count: u32 = (1 as u32).div_ceil(64);
             println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),

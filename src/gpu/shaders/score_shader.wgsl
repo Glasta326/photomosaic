@@ -21,7 +21,7 @@ struct Candidate {
 @group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
 @group(0) @binding(5) var<storage,read_write> output_score: array<f32>;
 
-@compute @workgroup_size(1)
+@compute @workgroup_size(64)
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_index = global_id.x;
     let canvas_texture_size = textureDimensions(input_canvas_texture);
@@ -46,9 +46,10 @@ fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let target_pixel = textureLoad(input_target_texture, coords, 0);
             let score = distance(result, target_pixel);
 
-            output_score[canvas_texture_size.x * y + x] = score;
+            score_sum += score;
         }
     }
+    output_score[thread_index] = score_sum;
 }
 
 // Alpha-composite drawing function

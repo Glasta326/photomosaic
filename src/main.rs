@@ -18,7 +18,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Exiting...");
         return Ok(());
     };
-    cfg.candidates_per_generation = 921600;
     println!("{}", cfg.display());
 
     // Create the rng from the config seed
@@ -53,25 +52,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = gpu::GpuContext::init(atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
 
+    // test color difference result on 2 candiates
+    // expected result is to see results differ very slightly
     let mut candidates: Vec<Candidate> = vec![];
     candidates.push(Candidate::new(0, 0, 0, 0.0, 1.0));
-    
+    candidates.push(Candidate::new(0, 0, 0, 0.1, 1.0));
 
     let x = score_shader.run(&cfg, &context, &candidates, &canvas_texture)?;
-    println!("{}",x[0]);
+    println!("{:#?}", x);
 
-    let width = 1280;
-    let height = 720;
-    let values: Vec<f32> = x;
-
-    let mut img = image::GrayImage::new(width, height);
-
-    for (pixel, value) in img.pixels_mut().zip(values.iter()) {
-        let gray = (value.clamp(0.0, 1.0) * 255.0) as u8;
-        *pixel = Luma([gray]);
-    }
-
-    img.save("debug/testing_output/image.png")?;
-
+    
     return Ok(());
 }
