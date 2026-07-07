@@ -18,6 +18,7 @@ struct Candidate {
 @group(0) @binding(1) var<storage,read> input_atlas_entries: array<AtlasEntry>;
 @group(0) @binding(2) var input_target_texture: texture_2d<f32>;
 @group(0) @binding(3) var input_canvas_texture: texture_2d<f32>;
+
 @group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
 @group(0) @binding(5) var<storage,read_write> output_score: array<f32>;
 

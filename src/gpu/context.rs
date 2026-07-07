@@ -1,7 +1,7 @@
 use image::RgbaImage;
-use wgpu::{TextureUsages, util::DeviceExt};
+use wgpu::{TexelCopyBufferLayout, TextureUsages, util::DeviceExt};
 
-use crate::data_reader::AtlasEntry;
+use crate::{config_parse::Config, data_reader::AtlasEntry};
 
 pub struct GpuContext {
     pub device: wgpu::Device,
@@ -21,10 +21,15 @@ pub struct Buffers {
 
     /// This is the image the user wants to re-create from the pallette.
     pub input_target_texture: wgpu::Texture,
+
+    /// This is the canvas that is drawn to over time.
+    /// Changes after every cycle
+    pub input_canvas_texture: wgpu::Texture,
 }
 
 impl GpuContext {
     pub fn init(
+        cfg: &Config,
         atlas_texture: RgbaImage,
         atlas_entries: Vec<AtlasEntry>,
         target_texture: RgbaImage,
@@ -48,6 +53,7 @@ impl GpuContext {
             pollster::block_on(_adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
 
         let buffers = Buffers::new(
+            cfg,
             &device,
             &queue,
             atlas_texture,
@@ -65,6 +71,7 @@ impl GpuContext {
 
 impl Buffers {
     fn new(
+        cfg: &Config,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         atlas_texture: RgbaImage,
@@ -77,7 +84,7 @@ impl Buffers {
             depth_or_array_layers: 1,
         };
 
-        let canvas_texture_size = wgpu::Extent3d {
+        let target_texture_size = wgpu::Extent3d {
             width: target_texture.width(),
             height: target_texture.height(),
             depth_or_array_layers: 1,
@@ -102,12 +109,26 @@ impl Buffers {
 
         let target_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Target texture buffer"),
-            size: canvas_texture_size,
+            size: target_texture_size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST, // Ditto
+            view_formats: &[],
+        });
+
+        let canvas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Score shader: Canvas texture buffer"),
+            size: target_texture_size, // Same size as target texture
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC, // Temp
             view_formats: &[],
         });
 
@@ -131,13 +152,30 @@ impl Buffers {
                 bytes_per_row: Some(4 * target_texture.width()),
                 rows_per_image: None, // Only one texture so unneeded
             },
-            canvas_texture_size,
+            target_texture_size,
+        );
+
+        // Initalise canvas texture with a blank image
+        let canvas_texture = RgbaImage::new(
+            cfg.extra_data.target_dimensions.0,
+            cfg.extra_data.target_dimensions.1,
+        );
+        queue.write_texture(
+            canvas_texture_buffer.as_image_copy(),
+            bytemuck::cast_slice(canvas_texture.as_raw()),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * canvas_texture.width()),
+                rows_per_image: None,
+            },
+            target_texture_size,
         );
 
         return Buffers {
             input_atlas_texture: atlas_texture_buffer,
             input_atlas_entry_buffer: atlas_entry_buffer,
             input_target_texture: target_texture_buffer,
+            input_canvas_texture: canvas_texture_buffer,
         };
     }
 }

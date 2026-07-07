@@ -1,8 +1,11 @@
+use std::f32::consts::PI;
+
 use image::{Luma, RgbaImage, imageops};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
     candidate::Candidate,
+    gpu::draw_shader,
     utils::math_utils::{self, lerp},
 };
 
@@ -43,14 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cfg.extra_data.atlas_dimensions = atlas_texture.dimensions();
     cfg.extra_data.target_dimensions = target_texture.dimensions();
 
-    // Create blank canvas texture
-    let canvas_texture = RgbaImage::new(
-        cfg.extra_data.target_dimensions.0,
-        cfg.extra_data.target_dimensions.1,
-    );
-
-    let context = gpu::GpuContext::init(atlas_texture, atlas_entries, target_texture)?;
+    let context = gpu::GpuContext::init(&cfg, atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
+    let draw_shader = gpu::DrawShader::init(&cfg, &context)?;
 
     // test color difference result on 2 candiates
     // expected result is to see results differ very slightly
@@ -58,9 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     candidates.push(Candidate::new(0, 0, 0, 0.0, 1.0));
     candidates.push(Candidate::new(0, 0, 0, 0.1, 1.0));
 
-    let x = score_shader.run(&cfg, &context, &candidates, &canvas_texture)?;
+    let x = score_shader.run(&cfg, &context, &candidates)?;
     println!("{:#?}", x);
-
-    
+    for i in 0..8 {
+        draw_shader.run(&context, &Candidate::new(i, 0, 0, 0.0, 1.0))?;
+    }
     return Ok(());
 }

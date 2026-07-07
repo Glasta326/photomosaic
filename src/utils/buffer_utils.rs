@@ -8,3 +8,15 @@ pub fn get_padded_buffer_size<T>(size: usize) -> u64 {
 
     return padded_candidate_buffer_size;
 }
+
+/// Width and height are the texture width and height
+/// Workgroup width and height are from @compute @workgroup_size(X,Y) in WGSL
+pub fn compute_texture_work_group_count(
+    (width, height): (u32, u32),
+    (workgroup_width, workgroup_height): (u32, u32),
+) -> (u32, u32) {
+    let x = (width + workgroup_width - 1) / workgroup_width;
+    let y = (height + workgroup_height - 1) / workgroup_height;
+
+    return (x, y);
+}

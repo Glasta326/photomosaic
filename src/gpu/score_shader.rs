@@ -13,10 +13,6 @@ pub struct ScoreShader {
 }
 
 struct ScoreBuffers {
-    /// This is the canvas that is drawn to over time.
-    /// Changes after every cycle
-    input_canvas_texture: wgpu::Texture,
-
     /// This is the array of candidate info, for example, an entry may look like: {image_id: 0, rotation: 0.2324, scale: 1.56}.
     /// Changes after every cycle
     input_candidate_buffer: wgpu::Buffer,
@@ -168,7 +164,8 @@ impl ScoreShader {
                     wgpu::BindGroupEntry {
                         binding: 3,
                         resource: wgpu::BindingResource::TextureView(
-                            &buffers
+                            &context
+                                .buffers
                                 .input_canvas_texture
                                 .create_view(&wgpu::TextureViewDescriptor::default()),
                         ),
@@ -198,28 +195,30 @@ impl ScoreShader {
         cfg: &Config,
         context: &GpuContext,
         candidates: &Vec<Candidate>,
-        canvas: &RgbaImage,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        // Fill our candidate and canvas buffers
+        // Copy data into our candidate buffer
         context.queue.write_buffer(
             &self.buffers.input_candidate_buffer,
             0,
             bytemuck::cast_slice(candidates),
         );
-        context.queue.write_texture(
-            self.buffers.input_canvas_texture.as_image_copy(),
-            bytemuck::cast_slice(canvas.as_raw()),
-            TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * canvas.width()),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d {
-                width: canvas.width(),
-                height: canvas.height(),
-                depth_or_array_layers: 1,
-            },
-        );
+        // ...And canvas buffer
+        // NOTE: we might not need this?
+        // the drawing shader just copies its result straight into the canvas buffer at the end, so the canvas just lives on GPU memory the whole time?
+        // context.queue.write_texture(
+        //     context.buffers.input_canvas_texture.as_image_copy(),
+        //     bytemuck::cast_slice(canvas.as_raw()),
+        //     TexelCopyBufferLayout {
+        //         offset: 0,
+        //         bytes_per_row: Some(4 * canvas.width()),
+        //         rows_per_image: None,
+        //     },
+        //     wgpu::Extent3d {
+        //         width: context.buffers.input_canvas_texture.width(),
+        //         height: context.buffers.input_canvas_texture.height(),
+        //         depth_or_array_layers: 1,
+        //     },
+        // );
 
         let mut encoder = context
             .device
@@ -271,25 +270,6 @@ impl ScoreShader {
 
 impl ScoreBuffers {
     fn new(cfg: &Config, context: &GpuContext) -> Self {
-        let canvas_texture_size = wgpu::Extent3d {
-            width: context.buffers.input_target_texture.width(),
-            height: context.buffers.input_target_texture.height(),
-            depth_or_array_layers: 1,
-        };
-
-        let canvas_texture_buffer = context.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Score shader: Canvas texture buffer"),
-            size: canvas_texture_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::STORAGE_BINDING
-                | TextureUsages::COPY_DST, // Ditto
-            view_formats: &[],
-        });
-
         let candidate_data_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Score shader: Candidate data buffer"),
             size: buffer_utils::get_padded_buffer_size::<Candidate>(cfg.candidates_per_generation),
@@ -317,7 +297,6 @@ impl ScoreBuffers {
         });
 
         return ScoreBuffers {
-            input_canvas_texture: canvas_texture_buffer,
             input_candidate_buffer: candidate_data_buffer,
             output_score_buffer,
             readback_buffer,
