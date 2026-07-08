@@ -53,10 +53,6 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
     // Move into texture-local space
     var p = output_pixel - candidate_texture_pos;
 
-    // Move origin to center
-    let half = vec2<f32>(f32(atlas_region.width), f32(atlas_region.height)) * 0.5;
-    p -= half;
-
     // Inverse the rotation
     let c = cos(-candidate.rotation);
     let s = sin(-candidate.rotation);
@@ -66,6 +62,7 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
     p /= candidate.scale;
 
     // Move origin back to top-left
+    let half = vec2<f32>(f32(atlas_region.width), f32(atlas_region.height)) * 0.5;
     p += half;
 
     // Ensure we are inside the atlas region for this candidate

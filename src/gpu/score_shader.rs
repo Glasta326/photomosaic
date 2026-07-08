@@ -229,7 +229,8 @@ impl ScoreShader {
         // Set up the compute pass
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
-            let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
+            //let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
+            let workgroup_count: u32 = (1 as u32).div_ceil(64);
             println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),
@@ -263,6 +264,23 @@ impl ScoreShader {
         // Unmap readback buffer
         // Unmapping means "This is no longer being read by the CPU"
         self.buffers.readback_buffer.unmap();
+
+        //---------
+
+        let width = cfg.extra_data.target_dimensions.0;
+        let height = cfg.extra_data.target_dimensions.1;
+        let values: Vec<f32> = result.clone();
+
+        let mut img = image::GrayImage::new(width, height);
+
+        for (pixel, value) in img.pixels_mut().zip(values.iter()) {
+            let gray = (value.clamp(0.0, 1.0) * 255.0) as u8;
+            *pixel = image::Luma([gray]);
+        }
+
+        img.save("debug/testing_output/score_result_debug.png")?;
+
+        //---------
 
         return Ok(result);
     }

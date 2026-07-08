@@ -22,7 +22,7 @@ struct Candidate {
 @group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
 @group(0) @binding(5) var<storage,read_write> output_score: array<f32>;
 
-@compute @workgroup_size(64)
+@compute @workgroup_size(1)
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_index = global_id.x;
     let canvas_texture_size = textureDimensions(input_canvas_texture);
@@ -47,10 +47,11 @@ fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let target_pixel = textureLoad(input_target_texture, coords, 0);
             let score = distance(result, target_pixel);
 
-            score_sum += score;
+            output_score[canvas_texture_size.x * y + x] = score;
+            //score_sum += score;
         }
     }
-    output_score[thread_index] = score_sum;
+    //output_score[thread_index] = score_sum;
 }
 
 // Alpha-composite drawing function
@@ -80,15 +81,11 @@ fn draw(src: vec4<f32>, dest: vec4<f32>) -> vec4<f32> {
 fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> vec4<f32> {
     let atlas_region = input_atlas_entries[candidate.texture_id];
     let output_pixel = vec2<f32>(coords);
-
+    
     let candidate_texture_pos = vec2<f32>(f32(candidate.pos_x), f32(candidate.pos_y));
-
+    
     // Move into texture-local space
     var p = output_pixel - candidate_texture_pos;
-
-    // Move origin to center
-    let half = vec2<f32>(f32(atlas_region.width), f32(atlas_region.height)) * 0.5;
-    p -= half;
 
     // Inverse the rotation
     let c = cos(-candidate.rotation);
@@ -99,6 +96,7 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
     p /= candidate.scale;
 
     // Move origin back to top-left
+    let half = vec2<f32>(f32(atlas_region.width), f32(atlas_region.height)) * 0.5;
     p += half;
 
     // Ensure we are inside the atlas region for this candidate
