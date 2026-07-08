@@ -2,7 +2,7 @@ use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, include_wgsl};
 
 use crate::{
-    candidate::Candidate, config_parse::Config, gpu::context::GpuContext, utils::buffer_utils,
+    candidate::Candidate, config_parse::Config, gpu::context::GpuContext, profiling::Dropwatch, utils::buffer_utils,
 };
 
 pub struct ScoreShader {
@@ -27,6 +27,8 @@ struct ScoreBuffers {
 
 impl ScoreShader {
     pub fn init(cfg: &Config, context: &GpuContext) -> Result<Self, Box<dyn std::error::Error>> {
+        let _d = Dropwatch::new("ScoreShader init");
+        
         let shader_module = context
             .device
             .create_shader_module(include_wgsl!("shaders/score_shader.wgsl"));
@@ -196,6 +198,8 @@ impl ScoreShader {
         context: &GpuContext,
         candidates: &Vec<Candidate>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let _d = Dropwatch::new("ScoreShader run");
+        
         // Copy data into our candidate buffer
         context.queue.write_buffer(
             &self.buffers.input_candidate_buffer,

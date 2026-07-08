@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::profiling::Dropwatch;
+
 /// Collection of all program configuration settings & useful data based on program configuration that is not explicitly specified
 /// For example, the dimensions of the target and canvas images, while not specified as program args,
 /// are still inlcuded here as they are based on the images the user provided
@@ -105,6 +107,8 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
         return Ok(None);
     }
+
+    let _d = Dropwatch::new("Config parsing");
 
     // Default values
     let mut target_file_path = PathBuf::default();

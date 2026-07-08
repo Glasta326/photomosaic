@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs};
 use image::RgbaImage;
 use serde::Deserialize;
 
-use crate::config_parse::Config;
+use crate::{config_parse::Config, profiling::Dropwatch};
 
 const SUPPORTED_EXTENSIONS: [&'static str; 3] = ["png", "webp", "jpg"];
 
@@ -18,6 +18,7 @@ pub fn read_atlas_data(
 }
 
 fn read_atlas_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error::Error>> {
+    let _d = Dropwatch::new("Atlas texture read");
     let provided_atlas_texture_fp = cfg.atlas_texture_fp.clone();
 
     // Make sure file has a filetype ext
@@ -84,6 +85,7 @@ impl std::fmt::Display for AtlasEntry {
 }
 
 fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::Error>> {
+    let _d = Dropwatch::new("Atlas json read");
     let provided_atlas_json_fp = cfg.atlas_json_fp.clone();
 
     // Make sure file has a filetype ext
@@ -128,6 +130,7 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
 }
 
 pub fn read_target_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error::Error>> {
+    let _d = Dropwatch::new("Target texture read");
     let provided_target_texture_fp = cfg.target_texture.clone();
 
     // Make sure file has a filetype ext

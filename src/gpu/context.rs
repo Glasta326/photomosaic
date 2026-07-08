@@ -1,7 +1,7 @@
 use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, util::DeviceExt};
 
-use crate::{config_parse::Config, data_reader::AtlasEntry};
+use crate::{config_parse::Config, data_reader::AtlasEntry, profiling::{Dropwatch, stopwatch}};
 
 pub struct GpuContext {
     pub device: wgpu::Device,
@@ -34,6 +34,8 @@ impl GpuContext {
         atlas_entries: Vec<AtlasEntry>,
         target_texture: RgbaImage,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let _d = Dropwatch::new("GpuContext init");
+        
         let _descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         let _instance = wgpu::Instance::new(_descriptor);
         let _adapter =
@@ -78,6 +80,8 @@ impl Buffers {
         atlas_entries: Vec<AtlasEntry>,
         target_texture: RgbaImage,
     ) -> Self {
+        let _d = Dropwatch::new("GpuContext buffer creation");
+        
         let atlas_texture_size = wgpu::Extent3d {
             width: atlas_texture.width(),
             height: atlas_texture.height(),

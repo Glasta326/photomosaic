@@ -1,22 +1,20 @@
 use std::f32::consts::{PI, TAU};
 
-use image::{Luma, RgbaImage, imageops};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-use crate::{
-    candidate::Candidate,
-    gpu::draw_shader,
-    utils::{
-        buffer_utils::texture_to_image,
-        math_utils::{self, lerp},
-    },
-};
+use crate::
+    candidate::Candidate
+    
+;
+
+mod gpu;
+mod profiling;
+mod utils;
 
 mod candidate;
 mod config_parse;
 mod data_reader;
-mod gpu;
-mod utils;
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // If config parsing returns None, that means an early-exit parameter like -v or --help was used, so we return before doing anything.

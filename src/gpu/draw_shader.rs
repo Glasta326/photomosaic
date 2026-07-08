@@ -4,6 +4,7 @@ use crate::{
     candidate::Candidate,
     config_parse::Config,
     gpu::GpuContext,
+    profiling::Dropwatch,
     utils::{self, buffer_utils},
 };
 
@@ -24,6 +25,8 @@ pub struct DrawBuffers {
 
 impl DrawShader {
     pub fn init(cfg: &Config, context: &GpuContext) -> Result<Self, Box<dyn std::error::Error>> {
+        let _d = Dropwatch::new("DrawShader init");
+
         let shader_module = context
             .device
             .create_shader_module(include_wgsl!("shaders/draw_shader.wgsl"));
@@ -195,6 +198,8 @@ impl DrawShader {
         context: &GpuContext,
         candidate: &Candidate,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _d = Dropwatch::new("DrawShader run");
+        
         context.queue.write_buffer(
             &self.buffers.input_candidate,
             0,
