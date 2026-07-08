@@ -18,8 +18,8 @@ pub struct Config {
     /// Random seed
     pub seed: u64,
 
-    /// Any candidates below this threshold% are removed from the evolution cycle
-    pub survival_threshold: f32,
+    /// Any candidates below this threshold are removed from the evolution cycle
+    pub survival_threshold: usize,
 
     /// The number of evolutionary cycles for each image placed to the canvas
     pub evo_cycles: usize,
@@ -39,14 +39,16 @@ pub struct Config {
 pub struct ConfigData {
     pub atlas_dimensions: (u32, u32),
     pub target_dimensions: (u32, u32),
-    pub child_count: u32,
+    pub child_count: usize,
+    pub atlas_entry_count: u32,
 }
 impl ConfigData {
-    pub fn init(candidate_count: usize, threshold: f32) -> Self {
+    pub fn init(candidate_count: usize, threshold: usize) -> Self {
         return ConfigData {
             atlas_dimensions: (0, 0),
             target_dimensions: (0, 0),
-            child_count: (candidate_count as f32 / threshold).round() as u32 - 1, // -1 to account for the parent staying alive
+            child_count: (candidate_count as f32 / threshold as f32).round() as usize - 1, // -1 to account for the parent staying alive
+            atlas_entry_count: 0
         };
     }
 }
@@ -85,12 +87,12 @@ impl Default for Config {
             atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.json"),
             atlas_json_fp: PathBuf::from("debug/testing_input/target.png"),
             seed: rand::random::<u64>(),
-            survival_threshold: 0.9,
+            survival_threshold: 5,
             evo_cycles: 10,
             candidates_per_generation: 500,
             total_images: 1000,
             mutation_strength: 0.2,
-            extra_data: ConfigData::init(500, 0.9),
+            extra_data: ConfigData::init(500, 5),
         }
     }
 }
@@ -115,7 +117,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut atlas_file_path = PathBuf::default();
     let mut atlas_json_path = PathBuf::default();
     let mut seed = rand::random::<u64>(); // Default is random. Set-seeds are boring and only good for sharing
-    let mut survival_threshold = 0.9;
+    let mut survival_threshold = 5;
     let mut evo_cycles: usize = 10;
     let mut candidates_per_gen: usize = 500;
     let mut total_images: usize = 1000;
@@ -157,7 +159,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     "{} was used, but no threshold value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                survival_threshold = st.to_string_lossy().into_owned().parse::<f32>()?;
+                survival_threshold = st.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-ec" | "--evo_cycles" => {
                 let ec = args.next().ok_or(format!(

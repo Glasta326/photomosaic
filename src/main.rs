@@ -2,10 +2,7 @@ use std::f32::consts::{PI, TAU};
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-use crate::
-    candidate::Candidate
-    
-;
+use crate::{candidate::Candidate, profiling::Dropwatch, utils::buffer_utils};
 
 mod gpu;
 mod profiling;
@@ -14,7 +11,6 @@ mod utils;
 mod candidate;
 mod config_parse;
 mod data_reader;
-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // If config parsing returns None, that means an early-exit parameter like -v or --help was used, so we return before doing anything.
@@ -46,33 +42,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Update cfg data
     cfg.extra_data.atlas_dimensions = atlas_texture.dimensions();
     cfg.extra_data.target_dimensions = target_texture.dimensions();
+    cfg.extra_data.atlas_entry_count = atlas_entries.len() as u32;
 
+    // Initalise gpu resources
     let context = gpu::GpuContext::init(&cfg, atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
     let draw_shader = gpu::DrawShader::init(&cfg, &context)?;
 
-    // test color difference result on 2 candiates
-    // expected result is to see results differ very slightly
-    let mut candidates: Vec<Candidate> = vec![];
-    candidates.push(Candidate::new(4, 200, 200, 0.0, 1.0));
-    candidates.push(Candidate::new(2, 200, 200, 0.0, 1.0));
+    // Initalise other resources
+    let mut candidates: Vec<Candidate> =
+        vec![Candidate::new(0, 0, 0, 0.0, 0.0); cfg.candidates_per_generation];
+    let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
 
-    for i in 0..=9 {
-        draw_shader.run(
-            &context,
-            &Candidate::new(
-                i,
-                rng.random_range(0..1280),
-                rng.random_range(0..720),
-                rng.random_range(0.0..TAU),
-                1.0,
-            ),
-        )?;
+    // Main loop - every cycle of this adds one image to the final output
+    for i in 1..=cfg.total_images {
+        let _d = Dropwatch::new(format!("Main iteration: {}", i));
+
+        // Initalise the candidate array with a bunch of random ones
+        candidates.fill_with(|| Candidate::random(&cfg, &mut rng));
+
+        // Evolve a new image to draw to the canvas
+        for e in 1..=cfg.evo_cycles {
+            let _d = Dropwatch::new(format!("Evolution cycle: {} / {}", e, cfg.evo_cycles));
+
+            // Get the array of scores per each candidate
+            candidate_scores = score_shader.run(&cfg, &context, &candidates)?;
+
+            // To avoid moving the array out of scope, we sort an array of indicies based on the score values
+            let mut indicies: Vec<usize> = (0..candidates.len()).collect();
+            indicies.sort_by(|&a, &b| {
+                candidate_scores[a]
+                    .partial_cmp(&candidate_scores[b])
+                    .unwrap()
+            });
+
+            if e < cfg.evo_cycles {
+                // We go down the list of candidates in desceding order, untill we hit our limit determined by the survival threshold
+                // Each of these candidates is allowed to create children, and then both the candidate and the child is moved into the new array
+                let mut new_candidates: Vec<Candidate> = Vec::with_capacity(cfg.candidates_per_generation);
+                
+                for j in 0..cfg.survival_threshold {
+                    let index = indicies[j];
+                    let candidate = candidates[index];
+                    // First add all the children
+                    for _k in 0..cfg.extra_data.child_count {
+                        new_candidates.push(candidate.mutate_new(&cfg, &mut rng));
+                    }
+                    // Then add the parent
+                    new_candidates.push(candidate);
+                    
+                    if j == 0 {
+                        println!("Best candidate had score of: {}",candidate_scores[index])
+                    }
+                }
+                // Override the candidate pool with our new candidates
+                candidates = new_candidates;
+            }
+            else {
+                // This is the final iteration, so we get the best candidate and put it to the top
+                candidates[0] = candidates[indicies[0]];
+            }
+        }
+
+        // Draw the winning candidate onto the canvas
+        let winner = candidates[0];
+        draw_shader.run(&context, &winner)?;
+
+        if i % 10 == 0 {
+            let img = buffer_utils::texture_to_image(&cfg, &context, &context.buffers.input_canvas_texture)?;
+            img.save("debug/testing_output/test_output.png")?;
+        }
     }
-
-    let x = score_shader.run(&cfg, &context, &candidates)?;
-    println!("{:#?}", x);
-
 
     return Ok(());
 }

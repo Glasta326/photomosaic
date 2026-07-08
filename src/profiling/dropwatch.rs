@@ -1,7 +1,7 @@
 /// An automatic start-stop stopwatch that starts upon creation and ends when dropped.
 /// Used for timing whole functions 
 pub struct Dropwatch {
-    text: &'static str,
+    text: String,
 
     time: std::time::Instant,
 }
@@ -13,9 +13,9 @@ impl Drop for Dropwatch {
 }
 
 impl Dropwatch {
-    pub fn new(text: &'static str) -> Self {
+    pub fn new(text: impl Into<String>) -> Self {
         return Dropwatch {
-            text,
+            text: text.into(),
             time: std::time::Instant::now(),
         };
     }

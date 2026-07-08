@@ -1,14 +1,14 @@
 /// A manual stopwatch that can be re-used and is manually started and stopped
 /// Used for timing individual peices of code
 pub struct Stopwatch {
-    text: &'static str,
+    text: String,
 
     time: std::time::Instant,
 }
 
 impl Stopwatch {
-    pub fn start(&mut self, text: &'static str){
-        self.text = text;
+    pub fn start(&mut self, text: impl Into<String>) {
+        self.text = text.into();
         self.time = std::time::Instant::now();
     }
 
@@ -20,7 +20,7 @@ impl Stopwatch {
 /// A blank stopwatch with no text
 pub fn new() -> Stopwatch {
     return Stopwatch {
-        text: "",
+        text: String::new(),
         time: std::time::Instant::now(),
     };
 }

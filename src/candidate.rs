@@ -1,4 +1,4 @@
-use std::f64::consts::PI;
+use std::{f32::consts::PI};
 
 use rand::{RngExt, rngs::StdRng};
 
@@ -32,6 +32,18 @@ impl std::fmt::Display for Candidate {
             "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}",
             self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale
         )
+    }
+}
+
+impl std::fmt::Debug for Candidate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Candidate")
+            .field("texture_id", &self.texture_id)
+            .field("pos_x", &self.pos_x)
+            .field("pos_y", &self.pos_y)
+            .field("rotation", &self.rotation)
+            .field("scale", &self.scale)
+            .finish()
     }
 }
 
@@ -83,6 +95,17 @@ impl Candidate {
         }
 
         return Candidate::new(self.texture_id, new_pos.0, new_pos.1, new_ang, new_scale);
+    }
+
+    /// Generates a fully randomised Candidate
+    pub fn random(cfg: &Config, rng: &mut StdRng) -> Self {
+        return Candidate {
+            texture_id: rng.random_range(0..cfg.extra_data.atlas_entry_count),
+            pos_x: rng.random_range(0..=cfg.extra_data.target_dimensions.0),
+            pos_y: rng.random_range(0..=cfg.extra_data.target_dimensions.1),
+            rotation: rng.random_range(-PI..PI),
+            scale: rng.random_range(0.5..=2.0),
+        };
     }
 }
 
