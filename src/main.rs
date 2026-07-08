@@ -6,7 +6,10 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 use crate::{
     candidate::Candidate,
     gpu::draw_shader,
-    utils::math_utils::{self, lerp},
+    utils::{
+        buffer_utils::texture_to_image,
+        math_utils::{self, lerp},
+    },
 };
 
 mod candidate;
@@ -56,15 +59,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     candidates.push(Candidate::new(4, 200, 200, 0.0, 1.0));
     candidates.push(Candidate::new(2, 200, 200, 0.0, 1.0));
 
-    
     for i in 0..=9 {
-        draw_shader.run(&context, &Candidate::new(i, rng.random_range(0..1280), rng.random_range(0..720), rng.random_range(0.0..TAU), 1.0))?;
+        draw_shader.run(
+            &context,
+            &Candidate::new(
+                i,
+                rng.random_range(0..1280),
+                rng.random_range(0..720),
+                rng.random_range(0.0..TAU),
+                1.0,
+            ),
+        )?;
     }
-    
+
     let x = score_shader.run(&cfg, &context, &candidates)?;
-    println!("{:#?}",x);
+    println!("{:#?}", x);
 
 
-    
     return Ok(());
 }
