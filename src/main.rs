@@ -46,8 +46,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cfg.extra_data.atlas_dimensions = atlas_texture.dimensions();
     cfg.extra_data.target_dimensions = target_texture.dimensions();
 
-    cfg.candidates_per_generation = (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as usize;
-
     let context = gpu::GpuContext::init(&cfg, atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
     let draw_shader = gpu::DrawShader::init(&cfg, &context)?;
@@ -55,7 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // test color difference result on 2 candiates
     // expected result is to see results differ very slightly
     let mut candidates: Vec<Candidate> = vec![];
-    candidates.push(Candidate::new(4, 200, 200, 0.0, 0.0));
+    candidates.push(Candidate::new(4, 200, 200, 0.0, 1.0));
+    candidates.push(Candidate::new(2, 200, 200, 0.0, 1.0));
 
     
     for i in 0..=9 {
@@ -63,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     let x = score_shader.run(&cfg, &context, &candidates)?;
-    println!("{}",x[0]);
+    println!("{:#?}",x);
 
 
     

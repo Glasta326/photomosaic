@@ -248,74 +248,8 @@ impl DrawShader {
             self.buffers.output_texture.size(), // While the buffer is the same size as the canvas buffer. Just to be sure we use the output buffer
         );
 
-        //-------
-        let width = context.buffers.input_canvas_texture.width();
-        let height = context.buffers.input_canvas_texture.height();
-    
-        let bytes_per_pixel = 4;
-        let unpadded_bytes_per_row = width * bytes_per_pixel;
-    
-        // wgpu requires rows to be aligned to 256 bytes
-        let padded_bytes_per_row = (unpadded_bytes_per_row + 255) & !255;
-    
-        let readback_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Texture readback buffer"),
-            size: (padded_bytes_per_row * height) as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-    
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &context.buffers.input_canvas_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &readback_buffer,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(padded_bytes_per_row),
-                    rows_per_image: Some(height),
-                },
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-        //------
-
         context.queue.submit(Some(encoder.finish()));
 
-        //---------
-
-        // Wait for GPU work to finish
-        let slice = readback_buffer.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-    
-        context.device.poll(wgpu::PollType::wait_indefinitely())?;
-    
-        let data = slice.get_mapped_range();
-    
-        // Remove row padding
-        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
-    
-        for row in data.chunks(padded_bytes_per_row as usize) {
-            pixels.extend_from_slice(&row[..unpadded_bytes_per_row as usize]);
-        }
-    
-        drop(data);
-        readback_buffer.unmap();
-    
-        let image = image::RgbaImage::from_raw(width, height, pixels)
-            .ok_or("Failed to create image")?;
-    
-        image.save("debug/testing_output/draw_result_debug.png")?;
-
-        //---------
         return Ok(());
     }
 }
