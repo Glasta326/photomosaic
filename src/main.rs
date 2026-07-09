@@ -75,14 +75,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut candidates: Vec<Candidate> =
         vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
+    let mut best_score = f32::INFINITY;
 
     // Main loop - every cycle of this adds one image to the final output
     for i in 1..=cfg.total_images {
         let _d = Dropwatch::new(format!("Main iteration: {}", i));
-
+        
         // Initalise the candidate array with a bunch of random ones
         candidates.fill_with(|| Candidate::random(&cfg, &mut rng));
-
+        
         // Evolve a new image to draw to the canvas
         for e in 1..=cfg.evo_cycles {
             //let _d = Dropwatch::new(format!("Evolution cycle: {} / {}", e, cfg.evo_cycles));
@@ -137,7 +138,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         winner.pos_y *= cfg.downscale_factor;
         draw_shader.run_large(&context, &winner, &context.buffers.output_canvas_texture)?;
 
-        println!("Best candidate had score of: {}", candidate_scores[0])
+        println!("Best candidate had score of: {}", candidate_scores[0]);
+        best_score = candidate_scores[0];
     }
 
     // Save images at the end

@@ -26,11 +26,11 @@ struct Candidate {
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_index = global_id.x;
 
-    if thread_index > arrayLength(&output_score){
+    if thread_index > arrayLength(&output_score) {
         output_score[thread_index] = 0.0; // If it's out of the image bounds then it shouldnt change the score
         return;
     }
-    
+
     let canvas_texture_size = textureDimensions(input_canvas_texture);
     let this_candidate = input_candidates[thread_index];
 
@@ -86,9 +86,9 @@ fn draw(src: vec4<f32>, dest: vec4<f32>) -> vec4<f32> {
 fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> vec4<f32> {
     let atlas_region = input_atlas_entries[candidate.texture_id];
     let output_pixel = vec2<f32>(coords);
-    
+
     let candidate_texture_pos = vec2<f32>(candidate.pos_x, candidate.pos_y);
-    
+
     // Move into texture-local space
     var p = output_pixel - candidate_texture_pos;
 
@@ -113,8 +113,17 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
         return vec4<f32>(0.0);
     }
 
+    // If this texture is rotated inside the atlas we need to account for that
+    var sample_coord = p;
+    if atlas_region.rotated == 1u {
+        sample_coord = vec2<f32>(
+            f32(atlas_region.height) - 1.0 - p.y,
+            p.x
+        );
+    }
+
     // p is texture local space, so we add it to the absolute position of the region to get the coordinate of the pixel we want to sample
-    let atlas_coord = vec2<u32>(atlas_region.x + u32(p.x), atlas_region.y + u32(p.y));
+    let atlas_coord = vec2<u32>(atlas_region.x + u32(sample_coord.x), atlas_region.y + u32(sample_coord.y));
 
     return textureLoad(input_atlas_texture, atlas_coord, 0);
 }

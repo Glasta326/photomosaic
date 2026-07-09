@@ -118,13 +118,7 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
 
     // Due to the json layout, we have to read it into a hashmap, and then move the values from the hashmap into an array
     let buffer = fs::read_to_string(provided_atlas_json_fp)?;
-    let map: HashMap<String, AtlasEntry> = serde_json::from_str(&buffer)?;
-
-    // Note the cloned() here, otherwise we get a vec of references
-    let mut entries: Vec<AtlasEntry> = map.values().cloned().collect();
-
-    // Due to the hashmap step, the entries are in a shuffled order, so re-sort them here
-    entries.sort_by(|a, b| (b.width * b.height).cmp(&(a.width * a.height)));
+    let entries: Vec<AtlasEntry> = serde_json::from_str(&buffer)?;
 
     return Ok(entries);
 }
