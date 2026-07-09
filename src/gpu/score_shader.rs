@@ -198,7 +198,7 @@ impl ScoreShader {
         context: &GpuContext,
         candidates: &Vec<Candidate>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let _d = Dropwatch::new("ScoreShader run");
+        //let _d = Dropwatch::new("ScoreShader run");
         
         // Copy data into our candidate buffer
         context.queue.write_buffer(
@@ -217,7 +217,7 @@ impl ScoreShader {
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
             let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
-            println!("Score shader: true workgroup count: {}", &workgroup_count);
+            // println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),
                 timestamp_writes: None,

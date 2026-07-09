@@ -15,6 +15,9 @@ pub struct Config {
     /// File path to the atlas json. If not provided, will default to atlas_texture_fp, but with .json extension
     pub atlas_json_fp: PathBuf,
 
+    /// The target image will be internall downscaled by this amount.
+    pub downscale_factor: f32,
+
     /// Random seed
     pub seed: u64,
 
@@ -48,7 +51,7 @@ impl ConfigData {
             atlas_dimensions: (0, 0),
             target_dimensions: (0, 0),
             child_count: (candidate_count as f32 / threshold as f32).round() as usize - 1, // -1 to account for the parent staying alive
-            atlas_entry_count: 0
+            atlas_entry_count: 0,
         };
     }
 }
@@ -61,6 +64,7 @@ Config:
     target: {}
     atlas texture: {}
     atlas json: {}
+    downscale factor: {}
     seed: {}
     surival threshold: {}
     evo cycles: {}
@@ -70,6 +74,7 @@ Config:
             self.target_texture.display(),
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),
+            self.downscale_factor,
             self.seed,
             self.survival_threshold,
             self.evo_cycles,
@@ -83,10 +88,11 @@ Config:
 impl Default for Config {
     fn default() -> Self {
         Self {
-            target_texture: PathBuf::from("debug/testing_input/atlas.png"),
-            atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.json"),
-            atlas_json_fp: PathBuf::from("debug/testing_input/target.png"),
-            seed: rand::random::<u64>(),
+            target_texture: PathBuf::from("debug/testing_input/target.png"),
+            atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.png"),
+            atlas_json_fp: PathBuf::from("debug/testing_input/atlas.json"),
+            downscale_factor: 10.0,
+            seed: rand::random::<u64>(),// Default is random. Set-seeds would cause the same image each time
             survival_threshold: 5,
             evo_cycles: 10,
             candidates_per_generation: 500,
@@ -113,15 +119,16 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let _d = Dropwatch::new("Config parsing");
 
     // Default values
-    let mut target_file_path = PathBuf::default();
-    let mut atlas_file_path = PathBuf::default();
-    let mut atlas_json_path = PathBuf::default();
-    let mut seed = rand::random::<u64>(); // Default is random. Set-seeds are boring and only good for sharing
-    let mut survival_threshold = 5;
-    let mut evo_cycles: usize = 10;
-    let mut candidates_per_gen: usize = 500;
-    let mut total_images: usize = 1000;
-    let mut mutation_strength = 0.1;
+    let mut target_file_path = Config::default().target_texture;
+    let mut atlas_file_path = Config::default().atlas_texture_fp;
+    let mut atlas_json_path = Config::default().atlas_json_fp;
+    let mut downscale_factor = Config::default().downscale_factor;
+    let mut seed = Config::default().seed; 
+    let mut survival_threshold = Config::default().survival_threshold;
+    let mut evo_cycles: usize = Config::default().evo_cycles;
+    let mut candidates_per_gen: usize = Config::default().candidates_per_generation;
+    let mut total_images: usize = Config::default().total_images;
+    let mut mutation_strength = Config::default().mutation_strength;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -147,6 +154,13 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 ))?;
                 atlas_json_path = PathBuf::from(a);
             }
+            "-ds" | "--downscale_factor" => {
+                let s = args.next().ok_or(format!(
+                    "{} was used, but no downscaling value was provided.\nHint: use -h or --help for info",
+                    arg.display()
+                ))?;
+                downscale_factor = s.to_string_lossy().into_owned().parse::<f32>()?;
+            }
             "-s" | "--seed" => {
                 let s = args.next().ok_or(format!(
                     "{} was used, but no seed value was provided.\nHint: use -h or --help for info",
@@ -161,7 +175,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 ))?;
                 survival_threshold = st.to_string_lossy().into_owned().parse::<usize>()?;
             }
-            "-ec" | "--evo_cycles" => {
+            "-ec" | "--evolution_cycles" => {
                 let ec = args.next().ok_or(format!(
                     "{} was used, but no cycle value was provided.\nHint: use -h or --help for info",
                     arg.display()
@@ -210,6 +224,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         target_texture: target_file_path,
         atlas_texture_fp: atlas_file_path,
         atlas_json_fp: atlas_json_path,
+        downscale_factor,
         seed,
         survival_threshold,
         evo_cycles,

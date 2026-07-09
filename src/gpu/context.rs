@@ -1,7 +1,11 @@
 use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, util::DeviceExt};
 
-use crate::{config_parse::Config, data_reader::AtlasEntry, profiling::{Dropwatch, stopwatch}};
+use crate::{
+    config_parse::Config,
+    data_reader::AtlasEntry,
+    profiling::{Dropwatch, stopwatch},
+};
 
 pub struct GpuContext {
     pub device: wgpu::Device,
@@ -22,9 +26,12 @@ pub struct Buffers {
     /// This is the image the user wants to re-create from the pallette.
     pub input_target_texture: wgpu::Texture,
 
-    /// This is the canvas that is drawn to over time.
+    /// This is the downscaled canvas that is drawn to over time.
     /// Changes after every cycle
     pub input_canvas_texture: wgpu::Texture,
+
+    /// This is the full-scale canvas that is saved and outputted at the end of operations
+    pub output_canvas_texture: wgpu::Texture,
 }
 
 impl GpuContext {
@@ -35,7 +42,7 @@ impl GpuContext {
         target_texture: RgbaImage,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let _d = Dropwatch::new("GpuContext init");
-        
+
         let _descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         let _instance = wgpu::Instance::new(_descriptor);
         let _adapter =
@@ -81,7 +88,7 @@ impl Buffers {
         target_texture: RgbaImage,
     ) -> Self {
         let _d = Dropwatch::new("GpuContext buffer creation");
-        
+
         let atlas_texture_size = wgpu::Extent3d {
             width: atlas_texture.width(),
             height: atlas_texture.height(),
@@ -91,6 +98,13 @@ impl Buffers {
         let target_texture_size = wgpu::Extent3d {
             width: target_texture.width(),
             height: target_texture.height(),
+            depth_or_array_layers: 1,
+        };
+
+        // The output canvas is scaled up by the downscale factor
+        let output_canvas_texture_size = wgpu::Extent3d {
+            width: (target_texture.width() as f32 * cfg.downscale_factor) as u32,
+            height: (target_texture.height() as f32 * cfg.downscale_factor) as u32,
             depth_or_array_layers: 1,
         };
 
@@ -122,8 +136,8 @@ impl Buffers {
             view_formats: &[],
         });
 
-        let canvas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Score shader: Canvas texture buffer"),
+        let input_canvas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Score shader: Input canvas texture buffer"),
             size: target_texture_size, // Same size as target texture
             mip_level_count: 1,
             sample_count: 1,
@@ -132,7 +146,21 @@ impl Buffers {
             usage: TextureUsages::TEXTURE_BINDING
                 | TextureUsages::STORAGE_BINDING
                 | TextureUsages::COPY_DST
-                | TextureUsages::COPY_SRC, // Temp
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        let output_canvas_texture_buffer = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Score shader: Output canvas texture buffer"),
+            size: output_canvas_texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::STORAGE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -160,16 +188,32 @@ impl Buffers {
         );
 
         // Initalise canvas texture with a blank image
-        let canvas_texture = RgbaImage::new(
+        let input_canvas_texture = RgbaImage::new(
             cfg.extra_data.target_dimensions.0,
             cfg.extra_data.target_dimensions.1,
         );
         queue.write_texture(
-            canvas_texture_buffer.as_image_copy(),
-            bytemuck::cast_slice(canvas_texture.as_raw()),
+            input_canvas_texture_buffer.as_image_copy(),
+            bytemuck::cast_slice(input_canvas_texture.as_raw()),
             TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(4 * canvas_texture.width()),
+                bytes_per_row: Some(4 * input_canvas_texture.width()),
+                rows_per_image: None,
+            },
+            target_texture_size,
+        );
+
+        // Output canvas needs to have scaled-up size
+        let output_canvas_texture = RgbaImage::new(
+            (cfg.extra_data.target_dimensions.0 as f32 * cfg.downscale_factor) as u32,
+            (cfg.extra_data.target_dimensions.1 as f32 * cfg.downscale_factor) as u32,
+        );
+        queue.write_texture(
+            output_canvas_texture_buffer.as_image_copy(),
+            bytemuck::cast_slice(output_canvas_texture.as_raw()),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * output_canvas_texture.width()),
                 rows_per_image: None,
             },
             target_texture_size,
@@ -179,7 +223,8 @@ impl Buffers {
             input_atlas_texture: atlas_texture_buffer,
             input_atlas_entry_buffer: atlas_entry_buffer,
             input_target_texture: target_texture_buffer,
-            input_canvas_texture: canvas_texture_buffer,
+            input_canvas_texture: input_canvas_texture_buffer,
+            output_canvas_texture: output_canvas_texture_buffer,
         };
     }
 }

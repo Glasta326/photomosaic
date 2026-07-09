@@ -8,8 +8,8 @@ struct AtlasEntry {
 
 struct Candidate {
     texture_id: u32,
-    pos_x: u32,
-    pos_y: u32,
+    pos_x: f32,
+    pos_y: f32,
     rotation: f32,
     scale: f32,
 };
@@ -25,6 +25,12 @@ struct Candidate {
 @compute @workgroup_size(64)
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_index = global_id.x;
+
+    if thread_index > arrayLength(&output_score){
+        output_score[thread_index] = 0.0; // If it's out of the image bounds then it shouldnt change the score
+        return;
+    }
+    
     let canvas_texture_size = textureDimensions(input_canvas_texture);
     let this_candidate = input_candidates[thread_index];
 
@@ -81,7 +87,7 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
     let atlas_region = input_atlas_entries[candidate.texture_id];
     let output_pixel = vec2<f32>(coords);
     
-    let candidate_texture_pos = vec2<f32>(f32(candidate.pos_x), f32(candidate.pos_y));
+    let candidate_texture_pos = vec2<f32>(candidate.pos_x, candidate.pos_y);
     
     // Move into texture-local space
     var p = output_pixel - candidate_texture_pos;

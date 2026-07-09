@@ -14,10 +14,10 @@ pub struct Candidate {
     pub texture_id: u32,
 
     /// The x position of this candidate texture
-    pub pos_x: u32,
+    pub pos_x: f32,
 
     /// The y position of this candidate texture
-    pub pos_y: u32,
+    pub pos_y: f32,
 
     /// The rotation in radians of this candidate texture. 0.000 means unchanged rotation
     pub rotation: f32,
@@ -48,7 +48,7 @@ impl std::fmt::Debug for Candidate {
 }
 
 impl Candidate {
-    pub fn new(id: u32, x: u32, y: u32, rot: f32, scale: f32) -> Self {
+    pub fn new(id: u32, x: f32, y: f32, rot: f32, scale: f32) -> Self {
         return Candidate {
             texture_id: id,
             pos_x: x,
@@ -67,12 +67,12 @@ impl Candidate {
                 self.pos_x as f32,
                 random_pos.0 as f32,
                 cfg.mutation_strength,
-            ) as u32,
+            ),
             math_utils::lerp(
                 self.pos_y as f32,
                 random_pos.1 as f32,
                 cfg.mutation_strength,
-            ) as u32,
+            ),
         );
 
         // For angle, we want to either rotate left or right, and an amount decided by a range, with the limit on that range being affected by mutation strength
@@ -101,10 +101,10 @@ impl Candidate {
     pub fn random(cfg: &Config, rng: &mut StdRng) -> Self {
         return Candidate {
             texture_id: rng.random_range(0..cfg.extra_data.atlas_entry_count),
-            pos_x: rng.random_range(0..=cfg.extra_data.target_dimensions.0),
-            pos_y: rng.random_range(0..=cfg.extra_data.target_dimensions.1),
+            pos_x: rng.random_range(0.0..=cfg.extra_data.target_dimensions.0 as f32),
+            pos_y: rng.random_range(0.0..=cfg.extra_data.target_dimensions.1 as f32), // These don't need to be downscaled because the "target" image is already pre-downscaled by the reader
             rotation: rng.random_range(-PI..PI),
-            scale: rng.random_range(0.5..=2.0),
+            scale: rng.random_range(0.5..=2.0) / cfg.downscale_factor,
         };
     }
 }
@@ -122,7 +122,7 @@ mod tests {
         cfg.extra_data.atlas_dimensions = (500, 500);
         cfg.extra_data.target_dimensions = (500, 500);
         let mut rng = StdRng::seed_from_u64(cfg.seed);
-        let mut c = Candidate::new(0, 0, 0, 0.0, 0.0);
+        let mut c = Candidate::new(0, 0.0, 0.0, 0.0, 0.0);
 
         // Hypothetically if you set this high enough it will eventually fail due to chance
         // a value of ~ 1000 means that if it were to be overly biased, lets say it doubles 75% of the time
@@ -132,7 +132,7 @@ mod tests {
         }
 
         assert!(
-            (c.pos_x, c.pos_y) <= (500, 500),
+            (c.pos_x, c.pos_y) <= (500.0, 500.0),
             "Candidate position drifted outside of canvas bounds!\nCandidate pos: [x: {}, y: {}]",
             c.pos_x,
             c.pos_y

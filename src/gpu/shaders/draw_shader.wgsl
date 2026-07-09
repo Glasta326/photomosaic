@@ -8,26 +8,30 @@ struct AtlasEntry {
 
 struct Candidate {
     texture_id: u32,
-    pos_x: u32,
-    pos_y: u32,
+    pos_x: f32,
+    pos_y: f32,
     rotation: f32,
     scale: f32,
 };
 
 @group(0) @binding(0) var input_atlas_texture: texture_2d<f32>;
 @group(0) @binding(1) var<storage,read> input_atlas_entries: array<AtlasEntry>;
-@group(0) @binding(2) var input_target_texture: texture_2d<f32>;
-@group(0) @binding(3) var input_canvas_texture: texture_2d<f32>;
+@group(0) @binding(2) var canvas_texture: texture_2d<f32>;
 
-@group(0) @binding(4) var<uniform> input_candidate: Candidate;
-@group(0) @binding(5) var output_texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(3) var<uniform> input_candidate: Candidate;
+@group(0) @binding(4) var output_texture: texture_storage_2d<rgba8unorm, write>;
 
 @compute @workgroup_size(16,16)
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let coords = vec2<u32>(global_id.xy);
+
+    let size = textureDimensions(output_texture);
+    if (coords.x >= size.x || coords.y >= size.y) {
+        return;
+    }
     
     let candidate_pixel = get_atlas_pixel_from_candidate(input_candidate, coords);
-    let canvas_pixel = textureLoad(input_canvas_texture, coords, 0);
+    let canvas_pixel = textureLoad(canvas_texture, coords, 0);
     let result = draw(candidate_pixel, canvas_pixel);
     
     textureStore(output_texture, coords, result);
@@ -48,7 +52,7 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
     let atlas_region = input_atlas_entries[candidate.texture_id];
     let output_pixel = vec2<f32>(coords);
     
-    let candidate_texture_pos = vec2<f32>(f32(candidate.pos_x), f32(candidate.pos_y));
+    let candidate_texture_pos = vec2<f32>(candidate.pos_x, candidate.pos_y);
     
     // Move into texture-local space
     var p = output_pixel - candidate_texture_pos;

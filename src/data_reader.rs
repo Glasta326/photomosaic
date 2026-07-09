@@ -172,7 +172,14 @@ pub fn read_target_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error
     }
 
     // Attempt to load image file
-    let target_texture = image::open(provided_target_texture_fp)?;
+    let mut target_texture = image::open(provided_target_texture_fp)?;
+
+    // Downscale target
+    target_texture = target_texture.resize(
+        (target_texture.width() as f32 / cfg.downscale_factor) as u32,
+        (target_texture.height() as f32 / cfg.downscale_factor) as u32,
+        image::imageops::FilterType::Lanczos3,
+    );
 
     return Ok(target_texture.to_rgba8());
 }
