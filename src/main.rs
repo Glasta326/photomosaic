@@ -1,7 +1,10 @@
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
-    candidate::Candidate, config_parse::Config, gpu::GpuContext, profiling::Dropwatch,
+    candidate::Candidate,
+    config_parse::Config,
+    gpu::GpuContext,
+    profiling::{Dropwatch, RuntimeData, Stopwatch, runtime_data},
     utils::buffer_utils,
 };
 
@@ -12,27 +15,6 @@ mod utils;
 mod candidate;
 mod config_parse;
 mod data_reader;
-
-// Okay, in order to apply downscaling here, we need to draw TWICE
-// the program will have the internal canvas buffer, which is the downscaled tiny size
-// everything we currently do applies to that
-// Then, we have a secondary buffer, which things are also drawn to
-// the key, is we apply the scaling effect to the candidate's values before drawing it to the bigger canvas buffer
-// So for example, in the calculations on our mini buffer, we might have a candidate with the values
-// pos = (23,34)
-// rot = 0.2523
-// scale = 0.15332
-// (worth noting, we apply a downscale factor to all the scaling effects in the candidates, so it fits when scaling back up)
-// (normally, this candidate would be 1.5332 scale, but 10x downscale makes it 0.15332)
-// Supposing that candidate wins the evolution cycles, it gets drawn to the mini canvas at (23,34), ect
-// just like how it is now
-// but, after that has been drawn, we modify the stats and transform the candidate into:
-// pos = (230,340)
-// rot = 0.2523
-// scale = 1.5332
-// and then draw THAT to the BIGGER CANVAS that is used for output
-// due to loss of precision, positions might need to be stored as floats
-// atleast cpu-side, can still get rounded to u32 and put in the shader.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // If config parsing returns None, that means an early-exit parameter like -v or --help was used, so we return before doing anything.
@@ -75,18 +57,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut candidates: Vec<Candidate> =
         vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
-    let mut best_score = f32::INFINITY;
+
+    let mut iteration_stopwatch = Stopwatch::new();
+    let mut evo_cycle_stopwatch = Stopwatch::new();
+    let mut rd = RuntimeData::new();
 
     // Main loop - every cycle of this adds one image to the final output
     for i in 1..=cfg.total_images {
-        let _d = Dropwatch::new(format!("Main iteration: {}", i));
-        
+        iteration_stopwatch.start(format!("Main iteration: {}", i));
+
         // Initalise the candidate array with a bunch of random ones
         candidates.fill_with(|| Candidate::random(&cfg, &mut rng));
-        
+
         // Evolve a new image to draw to the canvas
         for e in 1..=cfg.evo_cycles {
-            //let _d = Dropwatch::new(format!("Evolution cycle: {} / {}", e, cfg.evo_cycles));
+            evo_cycle_stopwatch.start(format!("Evolution cycle: {} / {}", e, cfg.evo_cycles));
 
             // Get the array of scores per each candidate
             candidate_scores = score_shader.run(&cfg, &context, &candidates)?;
@@ -126,6 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 candidates[0] = candidates[indicies[0]];
                 candidate_scores[0] = candidate_scores[indicies[0]];
             }
+            rd.add_evo_time(evo_cycle_stopwatch.end());
         }
 
         // Draw the winning candidate onto the internal canvas
@@ -139,11 +125,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         draw_shader.run_large(&context, &winner, &context.buffers.output_canvas_texture)?;
 
         println!("Best candidate had score of: {}", candidate_scores[0]);
-        best_score = candidate_scores[0];
+
+        rd.add_iter_time(iteration_stopwatch.end());
     }
 
     // Save images at the end
     save_output(&cfg, &context)?;
+
+    rd.display_stats();
 
     println!("Done!");
 

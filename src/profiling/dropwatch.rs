@@ -7,7 +7,7 @@ pub struct Dropwatch {
 }
 
 impl Drop for Dropwatch {
-    fn drop(&mut self) {
+    fn drop(&mut self){
         println!("{} took {:?}", self.text, self.time.elapsed());
     }
 }
