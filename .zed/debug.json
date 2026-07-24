@@ -1,0 +1,83 @@
+[
+  {
+    "label": "Run program: Debug",
+    "adapter": "CodeLLDB",
+    "build": {
+      "command": "cargo",
+      "args": ["build"],
+    },
+
+    "request": "launch",
+    "program": "target/debug/photomosaic",
+
+    "args": [],
+
+    "sourceLanguages": ["rust"],
+  },
+  {
+    "label": "Run program with args: Debug",
+    "adapter": "CodeLLDB",
+    "build": {
+      "command": "cargo",
+      "args": ["build"],
+    },
+
+    "request": "launch",
+    "program": "target/debug/photomosaic",
+
+    "args": ["-a", "/home/Glasta/Projects/Rust/photomosaic/debug/testing_input/atlas.png",
+      "-t", "/home/Glasta/Projects/Rust/photomosaic/debug/testing_input/target.jpg",
+      "--downscale_factor", "10",
+      //"-s", "12504",
+      "--survival_threshold", "200",
+      "--evolution_cycles", "12",
+      "-cpg", "2000",
+      "--total_images", "50",
+      "--mutation_strength","0.2"],
+
+    "sourceLanguages": ["rust"],
+  },
+  {
+    "label": "Run tests: Debug",
+    "adapter": "CodeLLDB",
+
+    "build": {
+      "command": "cargo",
+      "args": ["test", "--no-run"],
+    },
+
+    "request": "launch",
+    "program": "target/debug/photomosaic",
+
+    "args": [],
+
+    "sourceLanguages": ["rust"],
+  },
+  {
+    "label": "Run program: Release",
+    "adapter": "CodeLLDB",
+
+    "build": {
+      "command": "cargo",
+      "args": ["run","-r"],
+    },
+
+    "request": "launch",
+    "program": "target/release/photomosaic",
+
+    "args": [],
+
+    "sourceLanguages": ["rust"],
+  },
+  {
+    "label": "Build program: Release",
+    "adapter": "CodeLLDB",
+
+    "build": {
+      "command": "cargo",
+      "args": ["build", "-r"],
+    },
+
+    "sourceLanguages": ["rust"],
+  },
+]
