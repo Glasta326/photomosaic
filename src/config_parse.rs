@@ -15,7 +15,10 @@ pub struct Config {
     /// File path to the atlas json. If not provided, will default to atlas_texture_fp, but with .json extension
     pub atlas_json_fp: PathBuf,
 
-    /// The target image will be internall downscaled by this amount.
+    /// Folder path to the folder used for performance profiling logs. If not provided, will default to the same folder as the program is run in
+    pub profile_log_fp: PathBuf,
+
+    /// The target image will be internally downscaled by this amount.
     pub downscale_factor: f32,
 
     /// Random seed
@@ -64,6 +67,7 @@ Config:
     target: {}
     atlas texture: {}
     atlas json: {}
+    profile log folder: {}
     downscale factor: {}
     seed: {}
     surival threshold: {}
@@ -74,6 +78,7 @@ Config:
             self.target_texture.display(),
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),
+            self.profile_log_fp.display(),
             self.downscale_factor,
             self.seed,
             self.survival_threshold,
@@ -91,6 +96,7 @@ impl Default for Config {
             target_texture: PathBuf::from("debug/testing_input/target.png"),
             atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.png"),
             atlas_json_fp: PathBuf::from("debug/testing_input/atlas.json"),
+            profile_log_fp: std::env::current_dir().expect("The current working directory could not be opened."),
             downscale_factor: 10.0,
             seed: rand::random::<u64>(),// Default is random. Set-seeds would cause the same image each time
             survival_threshold: 5,
@@ -119,16 +125,18 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let _d = Dropwatch::new("Config parsing");
 
     // Default values
-    let mut target_file_path = Config::default().target_texture;
-    let mut atlas_file_path = Config::default().atlas_texture_fp;
-    let mut atlas_json_path = Config::default().atlas_json_fp;
-    let mut downscale_factor = Config::default().downscale_factor;
-    let mut seed = Config::default().seed; 
-    let mut survival_threshold = Config::default().survival_threshold;
-    let mut evo_cycles: usize = Config::default().evo_cycles;
-    let mut candidates_per_gen: usize = Config::default().candidates_per_generation;
-    let mut total_images: usize = Config::default().total_images;
-    let mut mutation_strength = Config::default().mutation_strength;
+    let default = Config::default();
+    let mut target_file_path = default.target_texture;
+    let mut atlas_file_path = default.atlas_texture_fp;
+    let mut atlas_json_path = default.atlas_json_fp;
+    let mut profile_log_fp = default.profile_log_fp;
+    let mut downscale_factor = default.downscale_factor;
+    let mut seed = default.seed; 
+    let mut survival_threshold = default.survival_threshold;
+    let mut evo_cycles: usize = default.evo_cycles;
+    let mut candidates_per_gen: usize = default.candidates_per_generation;
+    let mut total_images: usize = default.total_images;
+    let mut mutation_strength = default.mutation_strength;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -148,18 +156,25 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 atlas_file_path = PathBuf::from(a);
             }
             "-aj" | "--atlas_json" => {
-                let a = args.next().ok_or(format!(
+                let aj = args.next().ok_or(format!(
                     "{} was used, but no atlas json file path was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                atlas_json_path = PathBuf::from(a);
+                atlas_json_path = PathBuf::from(aj);
+            }
+            "-pl" | "--profile_log" => {
+                let pl = args.next().ok_or(format!(
+                    "{} was used, but no profile log file path was provided.\nHint: use -h or --help for info",
+                    arg.display()
+                ))?;
+                profile_log_fp = PathBuf::from(pl);
             }
             "-ds" | "--downscale_factor" => {
-                let s = args.next().ok_or(format!(
+                let ds = args.next().ok_or(format!(
                     "{} was used, but no downscaling value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                downscale_factor = s.to_string_lossy().into_owned().parse::<f32>()?;
+                downscale_factor = ds.to_string_lossy().into_owned().parse::<f32>()?;
             }
             "-s" | "--seed" => {
                 let s = args.next().ok_or(format!(
@@ -217,13 +232,14 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
 
     // Calculate extra miscelaneous data from user specified configuration
     // TODO: this is bad
-    // the data in here is half calculated on init and half done later
+    // the data in here is half calculated on init and half done later and thats bad coding
     let extra_data = ConfigData::init(candidates_per_gen, survival_threshold);
 
     return Ok(Some(Config {
         target_texture: target_file_path,
         atlas_texture_fp: atlas_file_path,
         atlas_json_fp: atlas_json_path,
+        profile_log_fp,
         downscale_factor,
         seed,
         survival_threshold,
