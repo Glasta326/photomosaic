@@ -1,6 +1,6 @@
 use std::{format, println, time::Duration};
 
-use crate::{config_parse::Config, gpu::score_shader};
+use crate::{config_parse::Config};
 
 // Stores frame times for each main iteration and evolution cycle for display after program completion
 pub struct RuntimeData {
@@ -70,7 +70,7 @@ impl RuntimeData {
             draw_shader_avg += t;
         }
         draw_shader_avg /= self.draw_shader_times.len() as u32;
-
+        
         let text = format!(
             "
             Evolution cycle time data: [Average: {:?}, Min: {:?}, Max: {:?}],
