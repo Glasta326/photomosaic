@@ -25,8 +25,9 @@
     "request": "launch",
     "program": "target/debug/photomosaic",
 
-    "args": ["-a", "/home/Glasta/Projects/Rust/photomosaic/debug/testing_input/atlas.png",
-      "-t", "/home/Glasta/Projects/Rust/photomosaic/debug/testing_input/target.jpg",
+    "args": ["-a", "debug/testing_input/atlas.png",
+      "-t", "debug/testing_input/target.jpg",
+      "-pl", "debug/testing_output",
       "--downscale_factor", "10",
       //"-s", "12504",
       "--survival_threshold", "200",
