@@ -46,8 +46,20 @@ pub fn wrap_angle(mut angle: f32) -> f32 {
     angle - PI
 }
 
-
 pub fn angle_lerp(value1: f32, value2: f32, amount: f32) -> f32 {
     let delta = wrap_angle(value2 - value1);
     return wrap_angle(value1 + delta * amount);
+}
+
+pub fn average<T>(values: &[T]) -> T
+where
+    T: Copy + Default + std::ops::Add<Output = T> + std::ops::Div<Output = T> + From<f32>,
+{
+    let mut sum = T::default();
+
+    for &value in values {
+        sum = sum + value;
+    }
+
+    sum / T::from(values.len() as f32)
 }

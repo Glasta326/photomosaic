@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::{
     candidate::Candidate,
     config_parse::Config,
     gpu::GpuContext,
-    profiling::{Dropwatch, RuntimeData, Stopwatch, runtime_data},
+    profiling::{Dropwatch, RuntimeData, RuntimeStats, Stopwatch, runtime_data},
     utils::buffer_utils,
 };
 
@@ -17,6 +19,9 @@ mod config_parse;
 mod data_reader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Performance logging
+    let mut rs = RuntimeStats::init()?;
+    
     // If config parsing returns None, that means an early-exit parameter like -v or --help was used, so we return before doing anything.
     let Some(mut cfg) = config_parse::parse()? else {
         println!("Exiting...");
@@ -126,19 +131,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!("Best candidate had score of: {}", candidate_scores[0]);
 
+        // TODO: cleanup rd and replace with the new rs system
         rd.add_iter_time(iteration_stopwatch.end());
     }
 
     // Save images at the end
     save_output(&cfg, &context)?;
 
-    rd.display_stats();
-
+    rs.save_results(&cfg)?;
+    
     println!("Done!");
-
+    println!("Performance summary:");
+    rs.display_summary();
     return Ok(());
 }
 
+// TODO: Dynamic save location based on config
 fn save_output(cfg: &Config, context: &GpuContext) -> Result<(), Box<dyn std::error::Error>> {
     let img =
         buffer_utils::texture_to_image(&cfg, &context, &context.buffers.input_canvas_texture)?;

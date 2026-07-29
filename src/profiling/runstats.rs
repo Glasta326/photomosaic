@@ -1,6 +1,17 @@
-use std::{collections::HashMap, fs::File, path::PathBuf, time::Duration};
+use core::time;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Write,
+    ops::Add,
+    path::PathBuf,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use crate::config_parse::Config;
+use crate::{
+    config_parse::Config,
+    utils::math_utils::{self, average},
+};
 
 #[derive(Hash, Eq, PartialEq)]
 pub enum Metric {
@@ -8,6 +19,24 @@ pub enum Metric {
     DrawShader,
     MainIteration,
     EvolutionCycle,
+}
+
+impl Metric {
+    pub const ALL: [Metric; 4] = [
+        Metric::ScoreShader,
+        Metric::DrawShader,
+        Metric::MainIteration,
+        Metric::EvolutionCycle,
+    ];
+
+    pub fn name(&self) -> &str {
+        match self {
+            Metric::ScoreShader => "Score shader",
+            Metric::DrawShader => "Draw shader",
+            Metric::MainIteration => "Main iteration",
+            Metric::EvolutionCycle => "Evolution cycle",
+        }
+    }
 }
 
 pub struct RuntimeStats {
@@ -22,14 +51,12 @@ struct Stat {
 }
 
 impl RuntimeStats {
+    // Initalise the map with an empty statsheet for each metric
     pub fn init() -> Result<Self, Box<dyn std::error::Error>> {
         let mut map = HashMap::<Metric, Stat>::new();
-
-        // I really wish there was a way to iterate over enum entries
-        map.insert(Metric::DrawShader, Stat::default());
-        map.insert(Metric::ScoreShader, Stat::default());
-        map.insert(Metric::EvolutionCycle, Stat::default());
-        map.insert(Metric::MainIteration, Stat::default());
+        for m in Metric::ALL {
+            map.insert(m, Stat::default());
+        }
 
         return Ok(RuntimeStats { stats: (map) });
     }
@@ -49,68 +76,101 @@ impl RuntimeStats {
     }
 
     /// Prints a condensed version of the runtime data to the console
-    pub fn display_summary(&self, cfg: &Config) {
-        let mut evo_avg = Duration::ZERO;
-        let mut iter_avg = Duration::ZERO;
-        let mut score_shader_avg = Duration::ZERO;
-        let mut draw_shader_avg = Duration::ZERO;
+    pub fn display_summary(&self) {
+        let mut text = String::new();
+        text.push_str("Profiling report:\n");
 
-        let evo_times = self.stats[&Metric::EvolutionCycle].records.clone();
-        let iter_times = self.stats[&Metric::MainIteration].records.clone();
-        let score_shader_times = self.stats[&Metric::ScoreShader].records.clone();
-        let draw_shader_times = self.stats[&Metric::DrawShader].records.clone();
+        // Go over each recorded metric's times, calculate average and append string with formatted data
+        for metric in Metric::ALL {
+            let mut times = self.stats[&metric].records.clone();
+            times.sort();
 
-        // Average evo cycle time
-        for &t in &evo_times {
-            evo_avg += t;
+            let mut avg = Duration::ZERO;
+            for &t in &times {
+                avg += t;
+            }
+            avg = avg.div_f32(times.len() as f32);
+
+            text.push_str(
+                format!(
+                    "{} time: [Avg: {:?}, min: {:?}, max: {:?}]\n",
+                    metric.name(),
+                    avg,
+                    times.first(),
+                    times.last()
+                )
+                .as_str(),
+            );
         }
-        evo_avg /= evo_times.len() as u32;
 
-        // Average iteration time
-        for &t in &iter_times {
-            iter_avg += t;
-        }
-        iter_avg /= iter_times.len() as u32;
-
-        // Average score shader time
-        for &t in &score_shader_times {
-            score_shader_avg += t;
-        }
-        score_shader_avg /= score_shader_times.len() as u32;
-
-        // Average draw shader time
-        for &t in &draw_shader_times {
-            draw_shader_avg += t;
-        }
-        draw_shader_avg /= draw_shader_times.len() as u32;
-
-        println!(
-            "
-            Profiling report:
-            Main iteration time: [Avg: {:?}, min: {:?}, max: {:?}]
-            Evo cycle time: [Avg: {:?}, min: {:?}, max: {:?}]
-            Score shader time: [Avg: {:?}, min: {:?}, max: {:?}]
-            Draw shader time: [Avg: {:?}, min: {:?}, max: {:?}]
-            ",
-            iter_avg,
-            self.stats[&Metric::MainIteration].min,
-            self.stats[&Metric::MainIteration].max,
-            evo_avg,
-            self.stats[&Metric::EvolutionCycle].min,
-            self.stats[&Metric::EvolutionCycle].max,
-            score_shader_avg,
-            self.stats[&Metric::ScoreShader].min,
-            self.stats[&Metric::ScoreShader].max,
-            draw_shader_avg,
-            self.stats[&Metric::DrawShader].min,
-            self.stats[&Metric::DrawShader].max,
-        );
+        println!("{}", text);
     }
 
     /// Saves the result data to the config-specifed log file location if enabled
-    pub fn save_results() -> Result<(), Box<dyn std::error::Error>> {
-        println!();
-        // TODO
+    pub fn save_results(&self, cfg: &Config) -> Result<(), Box<dyn std::error::Error>> {
+        // Initalise file and stringbuilder
+        let fp = cfg.profile_log_fp.join("profile_log.txt");
+        let mut f = File::create(&fp)?;
+        let mut text = String::new();
+
+        let timestamp = chrono::Local::now().naive_local();
+        // Header info
+        text.push_str(
+            format!(
+                "{} v{} - [{}]\n",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                timestamp
+            )
+            .as_str(),
+        );
+
+        for metric in Metric::ALL {
+            // Add metric name to section
+            text.push_str(format!("\n[{}]:\n", metric.name()).as_str());
+
+            let mut times = self.stats[&metric].records.clone();
+            if times.len() <= 0 {
+                continue;
+            }
+            times.sort();
+
+            // Average
+            let mut avg = Duration::ZERO;
+            for &t in &times {
+                avg += t;
+            }
+            avg = avg.div_f32(times.len() as f32);
+
+            // Min/Max
+            let min = times.first().unwrap();
+            let max = times.last().unwrap();
+
+            // Sum
+            let mut sum = Duration::ZERO;
+            for &t in &times {
+                sum += t;
+            }
+
+            // P99 / P95
+            let p_95 = times[f32::round((times.len() - 1) as f32 * 95.0 / 100.0) as usize];
+            let p_99 = times[f32::round((times.len() - 1) as f32 * 99.0 / 100.0) as usize];
+
+            // Std.Dev
+            let mut s = 0.0;
+            for &t in &times {
+                let diff = t.as_millis() as f64 - avg.as_millis() as f64;
+                s += diff * diff;
+            }
+            s /= times.len() as f64;
+            let std_dev = Duration::from_millis(s.sqrt() as u64);
+
+            text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nMax: {:?}\nP95: {:?}\nP99: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, max, p_95, p_99, sum).as_str());
+        }
+
+        f.write_all(text.as_bytes())?;
+        println!("Runtime statistics saved to: {}", fp.display());
+
         return Ok(());
     }
 }
