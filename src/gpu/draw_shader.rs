@@ -4,7 +4,7 @@ use crate::{
     candidate::Candidate,
     config_parse::Config,
     gpu::GpuContext,
-    profiling::Dropwatch,
+    profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch},
     utils::{self, buffer_utils},
 };
 
@@ -228,11 +228,13 @@ impl DrawShader {
     /// Draws the candidate to the internal canvas
     pub fn run_small(
         &self,
+        rs: &mut RuntimeStats,
         context: &GpuContext,
         candidate: &Candidate,
         draw_target: &wgpu::Texture,
     ) -> Result<(), Box<dyn std::error::Error>> {
         return self.run(
+            rs,
             context,
             candidate,
             draw_target,
@@ -244,11 +246,13 @@ impl DrawShader {
     /// Draws the candidate to the external canvas
     pub fn run_large(
         &self,
+        rs: &mut RuntimeStats,
         context: &GpuContext,
         candidate: &Candidate,
         draw_target: &wgpu::Texture,
     ) -> Result<(), Box<dyn std::error::Error>> {
         return self.run(
+            rs,
             context,
             candidate,
             draw_target,
@@ -260,13 +264,15 @@ impl DrawShader {
     /// Draws the provided candidate to the provided texture
     fn run(
         &self,
+        rs: &mut RuntimeStats,
         context: &GpuContext,
         candidate: &Candidate,
         draw_target: &wgpu::Texture,
         bind_group: &wgpu::BindGroup,
         output_texture: &wgpu::Texture,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        //let _d = Dropwatch::new("DrawShader run");
+        let mut _s = Stopwatch::new();
+        _s.start("DrawShader run");
 
         context.queue.write_buffer(
             &self.buffers.input_candidate,
@@ -320,6 +326,8 @@ impl DrawShader {
 
         context.queue.submit(Some(encoder.finish()));
 
+
+        rs.record(Metric::DrawShader, _s.end());
         return Ok(());
     }
 }

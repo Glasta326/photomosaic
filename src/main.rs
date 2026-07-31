@@ -6,7 +6,7 @@ use crate::{
     candidate::Candidate,
     config_parse::Config,
     gpu::GpuContext,
-    profiling::{Dropwatch, RuntimeData, RuntimeStats, Stopwatch, runtime_data},
+    profiling::{Dropwatch, Metric, RuntimeData, RuntimeStats, Stopwatch, runtime_data},
     utils::buffer_utils,
 };
 
@@ -21,7 +21,7 @@ mod data_reader;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Performance logging
     let mut rs = RuntimeStats::init()?;
-    
+
     // If config parsing returns None, that means an early-exit parameter like -v or --help was used, so we return before doing anything.
     let Some(mut cfg) = config_parse::parse()? else {
         println!("Exiting...");
@@ -65,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut iteration_stopwatch = Stopwatch::new();
     let mut evo_cycle_stopwatch = Stopwatch::new();
-    let mut rd = RuntimeData::new();
 
     // Main loop - every cycle of this adds one image to the final output
     for i in 1..=cfg.total_images {
@@ -79,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             evo_cycle_stopwatch.start(format!("Evolution cycle: {} / {}", e, cfg.evo_cycles));
 
             // Get the array of scores per each candidate
-            candidate_scores = score_shader.run(&cfg, &context, &candidates)?;
+            candidate_scores = score_shader.run(&mut rs, &cfg, &context, &candidates)?;
 
             // To avoid moving the array out of scope, we sort an array of indicies based on the score values
             let mut indicies: Vec<usize> = (0..candidates.len()).collect();
@@ -116,30 +115,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 candidates[0] = candidates[indicies[0]];
                 candidate_scores[0] = candidate_scores[indicies[0]];
             }
-            rd.add_evo_time(evo_cycle_stopwatch.end());
+            rs.record(Metric::EvolutionCycle, evo_cycle_stopwatch.end());
         }
 
         // Draw the winning candidate onto the internal canvas
         let mut winner = candidates[0];
-        draw_shader.run_small(&context, &winner, &context.buffers.input_canvas_texture)?;
+        draw_shader.run_small(
+            &mut rs,
+            &context,
+            &winner,
+            &context.buffers.input_canvas_texture,
+        )?;
 
         // Scale up the winner's position and scale for the output canvas
         winner.scale *= cfg.downscale_factor;
         winner.pos_x *= cfg.downscale_factor;
         winner.pos_y *= cfg.downscale_factor;
-        draw_shader.run_large(&context, &winner, &context.buffers.output_canvas_texture)?;
+        draw_shader.run_large(
+            &mut rs,
+            &context,
+            &winner,
+            &context.buffers.output_canvas_texture,
+        )?;
 
         println!("Best candidate had score of: {}", candidate_scores[0]);
 
-        // TODO: cleanup rd and replace with the new rs system
-        rd.add_iter_time(iteration_stopwatch.end());
+        rs.record(Metric::MainIteration, iteration_stopwatch.end());
     }
 
-    // Save images at the end
+    // Save images and logs at the end
     save_output(&cfg, &context)?;
-
     rs.save_results(&cfg)?;
-    
+
     println!("Done!");
     println!("Performance summary:");
     rs.display_summary();

@@ -2,7 +2,7 @@ use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, include_wgsl};
 
 use crate::{
-    candidate::Candidate, config_parse::Config, gpu::context::GpuContext, profiling::Dropwatch, utils::buffer_utils,
+    candidate::Candidate, config_parse::Config, gpu::context::GpuContext, profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch}, utils::buffer_utils,
 };
 
 pub struct ScoreShader {
@@ -194,11 +194,13 @@ impl ScoreShader {
 
     pub fn run(
         &self,
+        rs: &mut RuntimeStats,
         cfg: &Config,
         context: &GpuContext,
         candidates: &Vec<Candidate>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        //let _d = Dropwatch::new("ScoreShader run");
+        let mut _s = Stopwatch::new();
+        _s.start("DrawShader run");
         
         // Copy data into our candidate buffer
         context.queue.write_buffer(
@@ -250,6 +252,8 @@ impl ScoreShader {
         // Unmap readback buffer
         // Unmapping means "This is no longer being read by the CPU"
         self.buffers.readback_buffer.unmap();
+
+        rs.record(Metric::ScoreShader, _s.end());
 
         return Ok(result);
     }

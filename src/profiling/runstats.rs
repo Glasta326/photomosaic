@@ -109,7 +109,7 @@ impl RuntimeStats {
     /// Saves the result data to the config-specifed log file location if enabled
     pub fn save_results(&self, cfg: &Config) -> Result<(), Box<dyn std::error::Error>> {
         // Initalise file and stringbuilder
-        let fp = cfg.profile_log_fp.join("profile_log.txt");
+        let fp = cfg.profile_log_fp.join("performance_log.txt");
         let mut f = File::create(&fp)?;
         let mut text = String::new();
 
@@ -159,13 +159,13 @@ impl RuntimeStats {
             // Std.Dev
             let mut s = 0.0;
             for &t in &times {
-                let diff = t.as_millis() as f64 - avg.as_millis() as f64;
+                let diff = t.as_nanos() as f64 - avg.as_nanos() as f64;
                 s += diff * diff;
             }
             s /= times.len() as f64;
-            let std_dev = Duration::from_millis(s.sqrt() as u64);
+            let std_dev = Duration::from_nanos_u128(s.sqrt() as u128);
 
-            text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nMax: {:?}\nP95: {:?}\nP99: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, max, p_95, p_99, sum).as_str());
+            text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nP95: {:?}\nP99: {:?}\nMax: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, p_95, p_99, max, sum).as_str());
         }
 
         f.write_all(text.as_bytes())?;
