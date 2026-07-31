@@ -1,6 +1,6 @@
 target/
-debug/testing_input/*
-debug/testing_output/*
+debug/testing_input/
+debug/testing_output/
 
 **/*.rs.bk
 *.pdb
