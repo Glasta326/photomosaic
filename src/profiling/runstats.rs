@@ -1,7 +1,7 @@
 use core::time;
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{File, OpenOptions},
     io::Write,
     ops::Add,
     path::PathBuf,
@@ -93,11 +93,11 @@ impl RuntimeStats {
 
             text.push_str(
                 format!(
-                    "{} time: [Avg: {:?}, min: {:?}, max: {:?}]\n",
+                    "\n{} time:\n [Avg: {:?}, min: {:?}, max: {:?}]\n",
                     metric.name(),
                     avg,
-                    times.first(),
-                    times.last()
+                    times.first().unwrap(),
+                    times.last().unwrap()
                 )
                 .as_str(),
             );
@@ -163,8 +163,9 @@ impl RuntimeStats {
                 s += diff * diff;
             }
             s /= times.len() as f64;
-            let std_dev = Duration::from_nanos_u128(s.sqrt() as u128);
-
+            s = s.sqrt();
+            let std_dev = Duration::from_nanos_u128(s as u128);//.div_duration_f64(avg);
+            
             text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nP95: {:?}\nP99: {:?}\nMax: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, p_95, p_99, max, sum).as_str());
         }
 
