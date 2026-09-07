@@ -271,8 +271,8 @@ impl DrawShader {
         bind_group: &wgpu::BindGroup,
         output_texture: &wgpu::Texture,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut _s = Stopwatch::new();
-        _s.start("DrawShader run");
+        let mut sw = Stopwatch::new();
+        sw.start(None);
 
         context.queue.write_buffer(
             &self.buffers.input_candidate,
@@ -326,8 +326,7 @@ impl DrawShader {
 
         context.queue.submit(Some(encoder.finish()));
 
-
-        rs.record(Metric::DrawShader, _s.end());
+        rs.record(Metric::DrawShader, sw.elapse());
         return Ok(());
     }
 }

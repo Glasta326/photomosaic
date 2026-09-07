@@ -14,3 +14,4 @@ serde_json = { version = "1.0.150", default-features = false, features = ["alloc
 serde = { version = "1.0.228", features = ["derive"] }
 rand = "0.10.2"
 chrono = "0.4.45"
+#glib = { git = "https://github.com/Glasta326/glib-rust.git"}

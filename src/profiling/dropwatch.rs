@@ -1,8 +1,7 @@
-/// An automatic start-stop stopwatch that starts upon creation and ends when dropped.
-/// Used for timing whole functions 
+/// A lazy Start-Stop stopwatch that stops and prints elapsed time once it dropped from scope
+/// Should only be used to time whole functions that are not run repeatedly
 pub struct Dropwatch {
     text: String,
-
     time: std::time::Instant,
 }
 

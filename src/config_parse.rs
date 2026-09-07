@@ -61,20 +61,18 @@ impl ConfigData {
 
 impl Config {
     pub fn display(&self) -> String {
-        return format!(
-            "
-Config:
-    target: {}
-    atlas texture: {}
-    atlas json: {}
-    profile log folder: {}
-    downscale factor: {}
-    seed: {}
-    surival threshold: {}
-    evo cycles: {}
-    candidates: {}
-    total images: {}
-    mutation str: {}",
+        return format!("
+target:             {}
+atlas texture:      {}
+atlas json:         {}
+profile log folder: {}
+downscale factor:   {}
+seed:               {}
+surival threshold:  {}
+evo cycles:         {}
+candidates:         {}
+total images:       {}
+mutation str:       {}",
             self.target_texture.display(),
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),

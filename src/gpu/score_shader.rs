@@ -199,8 +199,8 @@ impl ScoreShader {
         context: &GpuContext,
         candidates: &Vec<Candidate>,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let mut _s = Stopwatch::new();
-        _s.start("DrawShader run");
+        let mut sw = Stopwatch::new();
+        sw.start(None);
         
         // Copy data into our candidate buffer
         context.queue.write_buffer(
@@ -253,7 +253,7 @@ impl ScoreShader {
         // Unmapping means "This is no longer being read by the CPU"
         self.buffers.readback_buffer.unmap();
 
-        rs.record(Metric::ScoreShader, _s.end());
+        rs.record(Metric::ScoreShader, sw.elapse());
 
         return Ok(result);
     }

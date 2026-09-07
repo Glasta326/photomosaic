@@ -1,46 +1,48 @@
-use core::time;
-use std::{
-    collections::HashMap,
-    fs::{File, OpenOptions},
-    io::Write,
-    ops::Add,
-    path::PathBuf,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
-
 use crate::{
     config_parse::Config,
-    utils::math_utils::{self, average},
+    profiling::Metric::{CandidatePopulation, ScoreIndexSorting},
 };
+use chrono::{DurationRound, TimeDelta};
+use std::{collections::HashMap, fs::File, io::Write, time::Duration};
 
+/// A collection of substatial metrics for this program's logic
+/// Assume this enum may gain or lose entries over time
 #[derive(Hash, Eq, PartialEq)]
+#[derive(Clone)]
 pub enum Metric {
     ScoreShader,
     DrawShader,
-    MainIteration,
-    EvolutionCycle,
+    Initialization,
+    CandidatePopulation,
+    ScoreIndexSorting,
 }
 
 impl Metric {
-    pub const ALL: [Metric; 4] = [
+    pub const ALL: [Metric; 5] = [
         Metric::ScoreShader,
         Metric::DrawShader,
-        Metric::MainIteration,
-        Metric::EvolutionCycle,
+        Metric::Initialization,
+        Metric::CandidatePopulation,
+        Metric::ScoreIndexSorting,
     ];
 
     pub fn name(&self) -> &str {
         match self {
             Metric::ScoreShader => "Score shader",
             Metric::DrawShader => "Draw shader",
-            Metric::MainIteration => "Main iteration",
-            Metric::EvolutionCycle => "Evolution cycle",
+            Metric::Initialization => "Initialization",
+            Metric::CandidatePopulation => "Candidate populating",
+            Metric::ScoreIndexSorting => "Score index sorting",
         }
     }
 }
 
 pub struct RuntimeStats {
     stats: HashMap<Metric, Stat>,
+
+    /// Used to record the total time the relevant computation took to complete
+    /// "relevant" being loading atlases, running scores and ect. Not displaying stats at the end or any niche cleanup
+    total_time: std::time::Instant,
 }
 
 struct Stat {
@@ -51,14 +53,17 @@ struct Stat {
 }
 
 impl RuntimeStats {
-    // Initalise the map with an empty statsheet for each metric
+    /// Initalises the map with an empty statsheet for each metric
     pub fn init() -> Result<Self, Box<dyn std::error::Error>> {
         let mut map = HashMap::<Metric, Stat>::new();
         for m in Metric::ALL {
             map.insert(m, Stat::default());
         }
 
-        return Ok(RuntimeStats { stats: (map) });
+        return Ok(RuntimeStats {
+            stats: (map),
+            total_time: std::time::Instant::now(),
+        });
     }
 
     /// Submits a single time to this metric
@@ -78,8 +83,6 @@ impl RuntimeStats {
     /// Prints a condensed version of the runtime data to the console
     pub fn display_summary(&self) {
         let mut text = String::new();
-        text.push_str("Profiling report:\n");
-
         // Go over each recorded metric's times, calculate average and append string with formatted data
         for metric in Metric::ALL {
             let mut times = self.stats[&metric].records.clone();
@@ -107,13 +110,20 @@ impl RuntimeStats {
     }
 
     /// Saves the result data to the config-specifed log file location if enabled
+    /// Should be the final performance-profiling related function called
     pub fn save_results(&self, cfg: &Config) -> Result<(), Box<dyn std::error::Error>> {
+        let total_time_taken = self.total_time.elapsed();
+
         // Initalise file and stringbuilder
         let fp = cfg.profile_log_fp.join("performance_log.txt");
         let mut f = File::create(&fp)?;
         let mut text = String::new();
 
-        let timestamp = chrono::Local::now().naive_local();
+        // The file timestamp doesn't need nanosecond accuracy lol
+        let timestamp = chrono::Local::now()
+            .naive_local()
+            .duration_round(TimeDelta::seconds(1))
+            .unwrap();
         // Header info
         text.push_str(
             format!(
@@ -125,7 +135,20 @@ impl RuntimeStats {
             .as_str(),
         );
 
-        for metric in Metric::ALL {
+        text.push_str(format!("\n[Configuration]:{}\n", cfg.display()).as_str());
+
+        text.push_str(&format!("\n[Profiling report]:\n").to_string());
+        text.push_str(
+            &format!("------------------------------------------------------\n").to_string(),
+        );
+        text.push_str(format!("Total program execution time: {:?}\n", total_time_taken).as_str());
+
+        // Append metric information string in order based on total time for that metric
+        // That way, metrics that take up more time are prioritised and shown at the top
+        let mut sorted_metrics = Metric::ALL.to_vec();
+        sorted_metrics.sort_unstable_by(|a,b| self.stats[a].total.cmp(&self.stats[b].total));
+        sorted_metrics.reverse(); // We want bigger time at the front
+        for metric in sorted_metrics {
             // Add metric name to section
             text.push_str(format!("\n[{}]:\n", metric.name()).as_str());
 
@@ -146,11 +169,8 @@ impl RuntimeStats {
             let min = times.first().unwrap();
             let max = times.last().unwrap();
 
-            // Sum
-            let mut sum = Duration::ZERO;
-            for &t in &times {
-                sum += t;
-            }
+            // Total
+            let total = self.stats[&metric].total;
 
             // P99 / P95
             let p_95 = times[f32::round((times.len() - 1) as f32 * 95.0 / 100.0) as usize];
@@ -164,10 +184,14 @@ impl RuntimeStats {
             }
             s /= times.len() as f64;
             s = s.sqrt();
-            let std_dev = Duration::from_nanos_u128(s as u128);//.div_duration_f64(avg);
-            
-            text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nP95: {:?}\nP99: {:?}\nMax: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, p_95, p_99, max, sum).as_str());
+            let std_dev = Duration::from_nanos_u128(s as u128); //.div_duration_f64(avg);
+
+            text.push_str(format!("Samples: {:?}\nAverage: {:?}\nStd.Dev: {:?}\nMin: {:?}\nP95: {:?}\nP99: {:?}\nMax: {:?}\nTotal: {:?}\n", times.len(), avg, std_dev, min, p_95, p_99, max, total).as_str());
         }
+
+        text.push_str(
+            &format!("------------------------------------------------------\n").to_string(),
+        );
 
         f.write_all(text.as_bytes())?;
         println!("Runtime statistics saved to: {}", fp.display());
