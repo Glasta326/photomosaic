@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 
 use rand::{RngExt, rngs::StdRng};
+use wgpu::wgt::error::ErrorType;
 
 use crate::{
     config_parse::Config,
@@ -99,13 +100,16 @@ impl Candidate {
             new_scale /= mult;
         }
 
-        // Hue rotation value
-        // Again, like in rotation, it's a relative offset to the parent's value
-        let random_off = math_utils::coinflip(rng)
-            * rng.random_range(0.0..PI as f32 * cfg.mutation_strength) as f32;
-        let new_hue_angle = math_utils::wrap_angle(self.hue.to_radians() + random_off); // Normalise into 0-2pi range
-        let new_hue = new_hue_angle.to_degrees(); // Hue is in degrees
-
+        let mut new_hue = 0.0;
+        if cfg.enable_hue {
+            // Hue rotation value
+            // Again, like in rotation, it's a relative offset to the parent's value
+            let random_off = math_utils::coinflip(rng)
+                * rng.random_range(0.0..PI as f32 * cfg.mutation_strength) as f32;
+            let new_hue_angle = math_utils::wrap_angle(self.hue.to_radians() + random_off); // Normalise into 0-2pi range
+            new_hue = new_hue_angle.to_degrees(); // Hue is in degrees
+        }
+        
         return Candidate::new(
             self.texture_id,
             new_pos.0,
@@ -124,7 +128,14 @@ impl Candidate {
             pos_y: rng.random_range(0.0..=cfg.extra_data.target_dimensions.1 as f32), // These don't need to be downscaled because the "target" image is already pre-downscaled by the reader
             rotation: rng.random_range(-PI..PI),
             scale: rng.random_range(0.5..=2.0) / cfg.downscale_factor,
-            hue: rng.random_range(-180.0..180.0),
+            hue: {
+                if cfg.enable_hue {
+                    rng.random_range(-180.0..180.0)
+                }
+                else {
+                    0.0
+                }
+            },
         };
     }
 }

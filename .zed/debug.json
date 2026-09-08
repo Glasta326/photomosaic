@@ -25,8 +25,9 @@
     "request": "launch",
     "program": "target/debug/photomosaic",
 
-    "args": ["-a", "debug/testing_input/atlas.png",
-      "-t", "debug/testing_input/target.jpg",
+    "args": [
+      "-a", "debug/testing_input/mageAtlas.png",
+      "-t", "debug/testing_input/niko.png",
       "-pl", "debug/testing_output",
       "--downscale_factor", "10",
       //"--seed", "12504",
@@ -34,7 +35,9 @@
       "--evolution_cycles", "12",
       "--candidates", "800",
       "--total_images", "1000",
-      "--mutation_strength","0.05"],
+      "--mutation_strength","0.1",
+      "--hue_shift"
+      ],
 
     "sourceLanguages": ["rust"],
   },

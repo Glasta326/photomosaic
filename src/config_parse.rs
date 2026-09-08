@@ -39,6 +39,9 @@ pub struct Config {
     /// Controls how strong the mutation effects are, 0.0 means no change and 1.0 means children and maximially different
     pub mutation_strength: f32,
 
+    /// Toggles the ability for images to have hue shift mutations
+    pub enable_hue: bool,
+
     /// Extra program data not extrapolated from data specified by the user
     pub extra_data: ConfigData,
 }
@@ -72,7 +75,8 @@ surival threshold:  {}
 evo cycles:         {}
 candidates:         {}
 total images:       {}
-mutation str:       {}",
+mutation str:       {}
+hue shifting:       {}",
             self.target_texture.display(),
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),
@@ -83,7 +87,8 @@ mutation str:       {}",
             self.evo_cycles,
             self.candidates_per_generation,
             self.total_images,
-            self.mutation_strength
+            self.mutation_strength,
+            self.enable_hue
         );
     }
 }
@@ -103,6 +108,7 @@ impl Default for Config {
             total_images: 1000,
             mutation_strength: 0.2,
             extra_data: ConfigData::init(500, 5),
+            enable_hue: false,
         }
     }
 }
@@ -135,6 +141,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut candidates_per_gen: usize = default.candidates_per_generation;
     let mut total_images: usize = default.total_images;
     let mut mutation_strength = default.mutation_strength;
+    let mut hue_shift = default.enable_hue;
 
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
@@ -216,6 +223,9 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 ))?;
                 mutation_strength = ms.to_string_lossy().into_owned().parse::<f32>()?;
             }
+            "-h" | "--hue_shift" => {
+                hue_shift = true;
+            }
             _ => {
                 return Err(format!("Unknown parameter: '{}'", arg.display()))?;
             }
@@ -245,6 +255,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         candidates_per_generation: candidates_per_gen,
         total_images,
         mutation_strength,
+        enable_hue: hue_shift,
         extra_data: extra_data,
     }));
 }
