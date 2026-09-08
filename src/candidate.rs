@@ -1,4 +1,4 @@
-use std::{f32::consts::PI};
+use std::f32::consts::PI;
 
 use rand::{RngExt, rngs::StdRng};
 
@@ -24,13 +24,16 @@ pub struct Candidate {
 
     /// The scaling effect applied to this candidate texture. 1.000x means unchanged size
     pub scale: f32,
+
+    /// Hue shift value. 0.000 means unchanged color
+    pub hue: f32,
 }
 impl std::fmt::Display for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}",
-            self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale
+            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}\nHuge: {}",
+            self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale, self.hue
         )
     }
 }
@@ -43,18 +46,20 @@ impl std::fmt::Debug for Candidate {
             .field("pos_y", &self.pos_y)
             .field("rotation", &self.rotation)
             .field("scale", &self.scale)
+            .field("hue", &self.hue)
             .finish()
     }
 }
 
 impl Candidate {
-    pub fn new(id: u32, x: f32, y: f32, rot: f32, scale: f32) -> Self {
+    pub fn new(id: u32, x: f32, y: f32, rot: f32, scale: f32, hue: f32) -> Self {
         return Candidate {
             texture_id: id,
             pos_x: x,
             pos_y: y,
             rotation: rot,
             scale,
+            hue,
         };
     }
 
@@ -94,9 +99,21 @@ impl Candidate {
             new_scale /= mult;
         }
 
+        // Hue rotation value
+        // Again, like in rotation, it's a relative offset to the parent's value
+        let random_off = math_utils::coinflip(rng)
+            * rng.random_range(0.0..PI as f32 * cfg.mutation_strength) as f32;
+        let new_hue_angle = math_utils::wrap_angle(self.hue.to_radians() + random_off); // Normalise into 0-2pi range
+        let new_hue = new_hue_angle.to_degrees(); // Hue is in degrees
 
-
-        return Candidate::new(self.texture_id, new_pos.0, new_pos.1, new_ang, new_scale);
+        return Candidate::new(
+            self.texture_id,
+            new_pos.0,
+            new_pos.1,
+            new_ang,
+            new_scale,
+            new_hue,
+        );
     }
 
     /// Generates a fully randomised Candidate
@@ -107,6 +124,7 @@ impl Candidate {
             pos_y: rng.random_range(0.0..=cfg.extra_data.target_dimensions.1 as f32), // These don't need to be downscaled because the "target" image is already pre-downscaled by the reader
             rotation: rng.random_range(-PI..PI),
             scale: rng.random_range(0.5..=2.0) / cfg.downscale_factor,
+            hue: rng.random_range(-180.0..180.0),
         };
     }
 }
@@ -119,12 +137,12 @@ mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn candidate_mutation_divergence() {
+    fn candidate_mutation_boundary() {
         let mut cfg = Config::default();
         cfg.extra_data.atlas_dimensions = (500, 500);
         cfg.extra_data.target_dimensions = (500, 500);
         let mut rng = StdRng::seed_from_u64(cfg.seed);
-        let mut c = Candidate::new(0, 0.0, 0.0, 0.0, 0.0);
+        let mut c = Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
         // Hypothetically if you set this high enough it will eventually fail due to chance
         // a value of ~ 1000 means that if it were to be overly biased, lets say it doubles 75% of the time
@@ -150,6 +168,12 @@ mod tests {
             c.scale > f32::MIN && c.scale < f32::MAX,
             "Candidate scale diverged to zero or infinity!\nCandidate scale: [{}]",
             c.scale
+        );
+
+        assert!(
+            c.hue > -180.0 && c.hue < 180.0,
+            "Candidate hue outside 0.0 - 360 range!\nCandidate hue: [{}]",
+            c.hue
         );
     }
 }

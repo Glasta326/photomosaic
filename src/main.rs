@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initalise other resources
     let mut candidates: Vec<Candidate> =
-        vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
+        vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
 
     performance.record(Metric::Initialization, initialization_sw.elapse());
@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
         print!(
             "\r\x1b[2KBest score: {}\n",
-            candidate_scores[0] * cfg.downscale_factor * cfg.downscale_factor 
+            candidate_scores[0] / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32
         );
 
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
