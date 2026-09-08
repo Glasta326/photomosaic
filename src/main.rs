@@ -22,7 +22,7 @@ mod data_reader;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Performance logging
     let mut performance = RuntimeStats::init()?;
-    
+
     // Create all the stopwatches in one place
     let mut initialization_sw = Stopwatch::new();
     let mut candidate_populating_sw = Stopwatch::new();
@@ -156,9 +156,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("\x1b[2A");
         print!(
             "\r\x1b[2KProgress: [{}{}] {}/{}\n",
-            "=".repeat(filled.round() as usize), " ".repeat(empty.round() as usize), i, cfg.total_images
+            "=".repeat(filled.round() as usize),
+            " ".repeat(empty.round() as usize),
+            i,
+            cfg.total_images
         );
-        print!("\r\x1b[2KBest score: {}\n", candidate_scores[0]);
+        // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
+        // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
+        print!(
+            "\r\x1b[2KBest score: {}\n",
+            candidate_scores[0] * cfg.downscale_factor * cfg.downscale_factor 
+        );
 
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
     }

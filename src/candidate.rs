@@ -94,6 +94,8 @@ impl Candidate {
             new_scale /= mult;
         }
 
+
+
         return Candidate::new(self.texture_id, new_pos.0, new_pos.1, new_ang, new_scale);
     }
 

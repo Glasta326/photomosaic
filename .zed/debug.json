@@ -29,7 +29,7 @@
       "-t", "debug/testing_input/target.jpg",
       "-pl", "debug/testing_output",
       "--downscale_factor", "10",
-      //"-s", "12504",
+      "--seed", "12504",
       "--survival_threshold", "5",
       "--evolution_cycles", "10",
       "--candidates", "500",
