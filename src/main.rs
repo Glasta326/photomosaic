@@ -1,4 +1,9 @@
-use std::time::Duration;
+use std::{
+    fs,
+    io::{self, Write},
+    process::{Command, Stdio},
+    time::Duration,
+};
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use wgpu::naga::back::spv::SourceLanguage::Rust;
@@ -7,8 +12,9 @@ use crate::{
     candidate::Candidate,
     config_parse::Config,
     gpu::GpuContext,
-    profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch},
+    profiling::{Metric, RuntimeStats, Stopwatch},
     utils::buffer_utils,
+    video_writer::VideoWriter,
 };
 
 mod gpu;
@@ -18,6 +24,7 @@ mod utils;
 mod candidate;
 mod config_parse;
 mod data_reader;
+mod video_writer;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Performance logging
@@ -67,14 +74,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let draw_shader = gpu::DrawShader::init(&cfg, &context)?;
 
     // Initalise other resources
+
+    // Create the video writer, if enabled
+    let mut video: Option<VideoWriter> = None;
+    if cfg.enable_hue {
+        video = Some(VideoWriter::new(&cfg, &context)?);
+    }
+
     let mut candidates: Vec<Candidate> =
         vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
+    let mut tracked_best_score = f32::INFINITY;
 
     performance.record(Metric::Initialization, initialization_sw.elapse());
 
     // Padding for the live display
-    print!("\n\n\n");
+    print!("\n\n\n\n");
 
     // Main loop - every cycle of this adds one image to the final output
     for i in 1..=cfg.total_images {
@@ -130,6 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Draw the winning candidate onto the internal canvas
         let mut winner = candidates[0];
+        let current_winning_score = candidate_scores[0];
         draw_shader.run_small(
             &mut performance,
             &context,
@@ -148,38 +164,71 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &context.buffers.output_canvas_texture,
         )?;
 
-        // Output progress info
-        let scale_factor = cfg.total_images as f32 / 100.0;
-        let filled = i as f32 / 5.0 / scale_factor;
-        let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
+        // Update progress in terminal
+        display_progress_info(&cfg, i, &mut tracked_best_score, current_winning_score);;
 
-        print!("\x1b[2A");
-        print!(
-            "\r\x1b[2KProgress: [{}{}] {}/{}\n",
-            "=".repeat(filled.round() as usize),
-            " ".repeat(empty.round() as usize),
-            i,
-            cfg.total_images
-        );
-        // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
-        // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
-        print!(
-            "\r\x1b[2KBest score: {}\n",
-            candidate_scores[0] / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32
-        );
-
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+        // Write the frame into the video, if enabled
+        if cfg.enable_hue {
+            let img = buffer_utils::texture_to_u8(
+                &cfg,
+                &context,
+                &context.buffers.output_canvas_texture,
+            )?;
+            if let Some(video_writer) = &mut video {
+                video_writer.write_frame(img)?;
+            }
+        }
     }
     println!("");
 
     // Save images and logs at the end
     save_output(&cfg, &context)?;
+    if let Some(video) = video {
+        video.finish()?;
+    }
     performance.save_results(&cfg)?;
 
     println!("Done!");
-    // println!("\nPerformance summary:");
-    // performance.display_summary();
     return Ok(());
+}
+
+fn display_progress_info(
+    cfg: &Config,
+    i: usize,
+    tracked_best_score: &mut f32,
+    current_winning_score: f32,
+) {
+    // Output progress info
+    let scale_factor = cfg.total_images as f32 / 100.0;
+    let filled = i as f32 / 5.0 / scale_factor;
+    let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
+
+    print!("\x1b[3A");
+    print!(
+        "\r\x1b[2KProgress: [{}{}] {}/{}\n",
+        "=".repeat(filled.round() as usize),
+        " ".repeat(empty.round() as usize),
+        i,
+        cfg.total_images
+    );
+    // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
+    // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
+    print!(
+        "\r\x1b[2KBest score: {:.4}\nCurrent iteration score: {:.4}{}\n",
+        *tracked_best_score
+            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+        current_winning_score
+            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+        {
+            if *tracked_best_score >= current_winning_score {
+                *tracked_best_score = current_winning_score;
+                "\x1b[1;32m↓\x1b[0m" // buncha ansi code stuff, \x1b[1;32m just means "print bold green" and \x1b[0m just means "go back to normal"
+            } else {
+                "\x1b[1;31m↑\x1b[0m"
+            }
+        }
+    );
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 // TODO: Dynamic save location based on config
@@ -194,3 +243,11 @@ fn save_output(cfg: &Config, context: &GpuContext) -> Result<(), Box<dyn std::er
 
     return Ok(());
 }
+
+// TODO
+// ok so this video is actually very cool we should probably implement it properly but im not sure if we do that before or after the algorithm fixes
+// algorithm wise, i think we need to have the program include the previous best N candidates into the next iteration, and also have the program try to detect if a certain %
+// of recent iterations have stagnated (score is the same or worse), and if so, starts increasing the mutation strength over and over untill stagnatation is resolved, and then mutation
+// strength can be brought back down to the inital value
+//
+//

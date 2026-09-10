@@ -26,17 +26,18 @@
     "program": "target/debug/photomosaic",
 
     "args": [
-      "-a", "debug/testing_input/mageAtlas.png",
-      "-t", "debug/testing_input/niko.png",
+      "-a", "debug/testing_input/atlas.png",
+      "-t", "debug/testing_input/target.jpg",
       "-pl", "debug/testing_output",
-      "--downscale_factor", "10",
+      "--downscale_factor", "12",
       //"--seed", "12504",
-      "--survival_threshold", "8",
+      "--survival_threshold", "12",
       "--evolution_cycles", "12",
-      "--candidates", "800",
-      "--total_images", "1000",
-      "--mutation_strength","0.1",
-      "--hue_shift"
+      "--candidates", "1200",
+      "--total_images", "120",
+      "--mutation_strength","0.05",
+      "--hue_shift",
+      "--video_gen"
       ],
 
     "sourceLanguages": ["rust"],
