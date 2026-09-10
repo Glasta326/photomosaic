@@ -82,48 +82,6 @@ impl VideoWriter {
         let result = cmd.output();
         return result.is_ok();
     }
-
-    fn make_video(frames: &Vec<Vec<u8>>, width: u32, height: u32, fps: u32) -> std::io::Result<()> {
-        if fs::exists("debug/testing_output/generation.mp4").is_ok_and(|x| x == true) {
-            fs::remove_file("debug/testing_output/generation.mp4")?;
-        }
-        let mut ffmpeg = Command::new("ffmpeg")
-            .args([
-                "-f",
-                "rawvideo",
-                "-pixel_format",
-                "rgba",
-                "-video_size",
-                &format!("{}x{}", width, height),
-                "-framerate",
-                &fps.to_string(),
-                "-i",
-                "-",
-                "-vf",
-                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-                "-c:v",
-                "libx264",
-                "-pix_fmt",
-                "yuv420p",
-                "debug/testing_output/generation.mp4",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
-            .spawn()?;
-
-        let mut stdin = ffmpeg.stdin.take().unwrap();
-
-        for frame in frames {
-            stdin.write_all(frame)?;
-        }
-
-        drop(stdin); // Tell FFmpeg there are no more frames
-
-        ffmpeg.wait()?;
-
-        Ok(())
-    }
 }
 
 pub static mut X: i32 = 0;

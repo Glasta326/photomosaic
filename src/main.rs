@@ -79,6 +79,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut video: Option<VideoWriter> = None;
     if cfg.enable_hue {
         video = Some(VideoWriter::new(&cfg, &context)?);
+        if !VideoWriter::confirm_ffmpeg() {
+            return Err("ffmpeg could not be found".into());
+        }
     }
 
     let mut candidates: Vec<Candidate> =
