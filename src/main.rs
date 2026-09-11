@@ -36,6 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut initialization_sw = Stopwatch::new();
     let mut candidate_populating_sw = Stopwatch::new();
     let mut score_index_sorting_sw = Stopwatch::new();
+    let mut candidate_breeding_sw = Stopwatch::new();
+    let mut video_generation_sw = Stopwatch::new();
 
     initialization_sw.start(None);
 
@@ -117,8 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             candidate_scores = score_shader.run(&mut performance, &cfg, &context, &candidates)?;
 
             score_index_sorting_sw.start(None);
-
-            // To avoid moving the array out of scope, we sort an array of indicies based on the score values
+            // To avoid moving the array out of scope, we instead sort an array of indicies based on the score values
             let mut indicies: Vec<usize> = (0..candidates.len()).collect();
             indicies.sort_by(|&a, &b| {
                 candidate_scores[a]
@@ -127,12 +128,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             performance.record(Metric::ScoreIndexSorting, score_index_sorting_sw.elapse());
 
+            candidate_breeding_sw.start(None);
             if e < cfg.evo_cycles {
                 // We go down the list of candidates in desceding order, untill we hit our limit determined by the survival threshold
                 // Each of these candidates is allowed to create children, and then both the candidate and the child is moved into the new array
                 let mut new_candidates: Vec<Candidate> =
                     Vec::with_capacity(cfg.candidates_per_generation);
 
+
+                // TODO: replace this with a compute shader to create new candidates?
+                // its eating almost as much time as the fucking score shader does
+                // cant have rng in shaders so might need to implement seed-based pseudorandomness manually which could be fun
                 for j in 0..cfg.survival_threshold {
                     let index = indicies[j];
                     let candidate = candidates[index];
@@ -154,6 +160,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 candidates[0] = candidates[indicies[0]];
                 candidate_scores[0] = candidate_scores[indicies[0]];
             }
+            performance.record(
+                Metric::CandidateReproduction,
+                candidate_breeding_sw.elapse(),
+            );
         }
 
         // Ensure winner is actually an improvment
@@ -192,6 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         );
+        // This is here because we update history in the fucking print statement above
         mutation_strength_reduction = math_utils::remap(
             recent_history.fullness(),
             0.0,
@@ -227,6 +238,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Write the frame into the video, if enabled
         if cfg.enable_hue {
+            video_generation_sw.start(None);
             let img = buffer_utils::texture_to_u8(
                 &cfg,
                 &context,
@@ -235,6 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(video_writer) = &mut video {
                 video_writer.write_frame(img)?;
             }
+            performance.record(Metric::VideoGeneration, video_generation_sw.elapse());
         }
 
         i += 1;

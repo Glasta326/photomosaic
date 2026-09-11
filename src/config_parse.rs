@@ -111,7 +111,7 @@ impl Default for Config {
             evo_cycles: 10,
             candidates_per_generation: 500,
             total_images: 1000,
-            mutation_strength: 0.2,
+            mutation_strength: 0.1,
             extra_data: ConfigData::init(500, 5),
             enable_hue: false,
             enable_video: false

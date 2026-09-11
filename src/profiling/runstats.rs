@@ -7,23 +7,26 @@ use std::{collections::HashMap, fs::File, io::Write, time::Duration};
 
 /// A collection of substatial metrics for this program's logic
 /// Assume this enum may gain or lose entries over time
-#[derive(Hash, Eq, PartialEq)]
-#[derive(Clone)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub enum Metric {
     ScoreShader,
     DrawShader,
     Initialization,
     CandidatePopulation,
     ScoreIndexSorting,
+    CandidateReproduction,
+    VideoGeneration
 }
 
 impl Metric {
-    pub const ALL: [Metric; 5] = [
+    pub const ALL: [Metric; 7] = [
         Metric::ScoreShader,
         Metric::DrawShader,
         Metric::Initialization,
         Metric::CandidatePopulation,
         Metric::ScoreIndexSorting,
+        Metric::CandidateReproduction,
+        Metric::VideoGeneration
     ];
 
     pub fn name(&self) -> &str {
@@ -33,6 +36,8 @@ impl Metric {
             Metric::Initialization => "Initialization",
             Metric::CandidatePopulation => "Candidate populating",
             Metric::ScoreIndexSorting => "Score index sorting",
+            Metric::CandidateReproduction => "Candidate reproduction",
+            Metric::VideoGeneration => "Video generation"
         }
     }
 }
@@ -146,9 +151,14 @@ impl RuntimeStats {
         // Append metric information string in order based on total time for that metric
         // That way, metrics that take up more time are prioritised and shown at the top
         let mut sorted_metrics = Metric::ALL.to_vec();
-        sorted_metrics.sort_unstable_by(|a,b| self.stats[a].total.cmp(&self.stats[b].total));
+        sorted_metrics.sort_unstable_by(|a, b| self.stats[a].total.cmp(&self.stats[b].total));
         sorted_metrics.reverse(); // We want bigger time at the front
         for metric in sorted_metrics {
+            // If nothing was recorded for this metric, then skip it entirely
+            if self.stats[&metric].total == Duration::ZERO {
+                continue;
+            }
+
             // Add metric name to section
             text.push_str(format!("\n[{}]:\n", metric.name()).as_str());
 
