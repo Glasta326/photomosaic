@@ -6,7 +6,7 @@ use rand::{RngExt, rngs::StdRng};
 /// Panics if value results in NaN, infinity, or similar
 pub fn remap(value: f32, start1: f32, end1: f32, start2: f32, end2: f32) -> f32 {
     let out_value = start2 + (end2 - start2) * ((value - start1) / (end1 - start1));
-    if !out_value.is_normal() {
+    if out_value.is_nan() || out_value.is_infinite() {
         panic!(
             "Failed to remap {} from [{}] - [{}], into [{}] - [{}]",
             value, start1, end1, start2, end2

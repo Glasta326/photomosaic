@@ -11,12 +11,14 @@ use wgpu::naga::back::spv::SourceLanguage::Rust;
 use crate::{
     candidate::Candidate,
     config_parse::Config,
+    datastructs::ShiftRegister,
     gpu::GpuContext,
     profiling::{Metric, RuntimeStats, Stopwatch},
-    utils::buffer_utils,
+    utils::{buffer_utils, math_utils},
     video_writer::VideoWriter,
 };
 
+mod datastructs;
 mod gpu;
 mod profiling;
 mod utils;
@@ -88,14 +90,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
     let mut tracked_best_score = f32::INFINITY;
+    let mut recent_history = ShiftRegister::new();
+    // Dynamically adjusted mutation strength reduction, brings the value closer to zero as progress continues to stagnate
+    let mut mutation_strength_reduction = 0.0;
 
     performance.record(Metric::Initialization, initialization_sw.elapse());
 
     // Padding for the live display
-    print!("\n\n\n\n");
+    print!("{}", "\n".repeat(5));
 
     // Main loop - every cycle of this adds one image to the final output
-    for i in 1..=cfg.total_images {
+    let mut i: usize = 1;
+    while i <= cfg.total_images {
         candidate_populating_sw.start(None);
 
         // Initalise the candidate array with a bunch of random ones
@@ -132,7 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let candidate = candidates[index];
                     // First add all the children
                     for _k in 0..cfg.extra_data.child_count {
-                        new_candidates.push(candidate.mutate_new(&cfg, &mut rng));
+                        new_candidates.push(candidate.mutate_new(
+                            &cfg,
+                            &mut rng,
+                            cfg.mutation_strength - mutation_strength_reduction,
+                        ));
                     }
                     // Then add the parent
                     new_candidates.push(candidate);
@@ -146,9 +156,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Draw the winning candidate onto the internal canvas
+        // Ensure winner is actually an improvment
         let mut winner = candidates[0];
         let current_winning_score = candidate_scores[0];
+
+        // Terminal progress information and register updates
+        let scale_factor = cfg.total_images as f32 / 100.0;
+        let filled = i as f32 / 5.0 / scale_factor;
+        let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
+        print!("\x1b[4A");
+        print!(
+            "\r\x1b[2KProgress: [{}{}] {}/{}\n",
+            "=".repeat(filled.round() as usize),
+            " ".repeat(empty.round() as usize),
+            i,
+            cfg.total_images
+        );
+        // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
+        // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
+        print!(
+            "\r\x1b[2KBest score: {:.4}\nCurrent iteration score: {:.4}{}\n",
+            tracked_best_score
+                / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+            current_winning_score
+                / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+            {
+                // Updating the score tracker and recent history inside a fucking print statement isnt ideal but whatever
+                if tracked_best_score >= current_winning_score {
+                    tracked_best_score = current_winning_score;
+                    recent_history.push(false);
+                    "\x1b[1;32m↓\x1b[0m" // buncha ansi code stuff, \x1b[1;32m just means "print bold green" and \x1b[0m just means "go back to normal"
+                } else {
+                    recent_history.push(true);
+                    "\x1b[1;31m↑\x1b[0m"
+                }
+            }
+        );
+        mutation_strength_reduction = math_utils::remap(
+            recent_history.fullness(),
+            0.0,
+            1.0,
+            0.0,
+            cfg.mutation_strength - 0.001,
+        );
+        print!(
+            "\r\x1b[2KMutation strength reduction: {:.1}% : [{:.4}]\n",
+            (mutation_strength_reduction / cfg.mutation_strength) * 100.0,
+            cfg.mutation_strength - mutation_strength_reduction
+        );
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+        // Draw the winning candidate onto the internal canvas
         draw_shader.run_small(
             &mut performance,
             &context,
@@ -167,9 +225,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &context.buffers.output_canvas_texture,
         )?;
 
-        // Update progress in terminal
-        display_progress_info(&cfg, i, &mut tracked_best_score, current_winning_score);;
-
         // Write the frame into the video, if enabled
         if cfg.enable_hue {
             let img = buffer_utils::texture_to_u8(
@@ -181,6 +236,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 video_writer.write_frame(img)?;
             }
         }
+
+        i += 1;
     }
     println!("");
 
@@ -193,45 +250,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Done!");
     return Ok(());
-}
-
-fn display_progress_info(
-    cfg: &Config,
-    i: usize,
-    tracked_best_score: &mut f32,
-    current_winning_score: f32,
-) {
-    // Output progress info
-    let scale_factor = cfg.total_images as f32 / 100.0;
-    let filled = i as f32 / 5.0 / scale_factor;
-    let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
-
-    print!("\x1b[3A");
-    print!(
-        "\r\x1b[2KProgress: [{}{}] {}/{}\n",
-        "=".repeat(filled.round() as usize),
-        " ".repeat(empty.round() as usize),
-        i,
-        cfg.total_images
-    );
-    // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
-    // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
-    print!(
-        "\r\x1b[2KBest score: {:.4}\nCurrent iteration score: {:.4}{}\n",
-        *tracked_best_score
-            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
-        current_winning_score
-            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
-        {
-            if *tracked_best_score >= current_winning_score {
-                *tracked_best_score = current_winning_score;
-                "\x1b[1;32m↓\x1b[0m" // buncha ansi code stuff, \x1b[1;32m just means "print bold green" and \x1b[0m just means "go back to normal"
-            } else {
-                "\x1b[1;31m↑\x1b[0m"
-            }
-        }
-    );
-    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 // TODO: Dynamic save location based on config
