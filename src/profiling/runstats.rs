@@ -15,7 +15,7 @@ pub enum Metric {
     CandidatePopulation,
     ScoreIndexSorting,
     CandidateReproduction,
-    VideoGeneration
+    VideoGeneration,
 }
 
 impl Metric {
@@ -26,7 +26,7 @@ impl Metric {
         Metric::CandidatePopulation,
         Metric::ScoreIndexSorting,
         Metric::CandidateReproduction,
-        Metric::VideoGeneration
+        Metric::VideoGeneration,
     ];
 
     pub fn name(&self) -> &str {
@@ -37,7 +37,7 @@ impl Metric {
             Metric::CandidatePopulation => "Candidate populating",
             Metric::ScoreIndexSorting => "Score index sorting",
             Metric::CandidateReproduction => "Candidate reproduction",
-            Metric::VideoGeneration => "Video generation"
+            Metric::VideoGeneration => "Video generation",
         }
     }
 }
@@ -116,7 +116,11 @@ impl RuntimeStats {
 
     /// Saves the result data to the config-specifed log file location if enabled
     /// Should be the final performance-profiling related function called
-    pub fn save_results(&self, cfg: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_results(
+        &self,
+        cfg: &Config,
+        final_score: f32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let total_time_taken = self.total_time.elapsed();
 
         // Initalise file and stringbuilder
@@ -141,6 +145,9 @@ impl RuntimeStats {
         );
 
         text.push_str(format!("\n[Configuration]:{}\n", cfg.display()).as_str());
+
+        text.push_str(format!("\n[Extra data]:{}\n", cfg.extra_data).as_str());
+        text.push_str(format!("Final score:       {:.4}\n", final_score).as_str());
 
         text.push_str(&format!("\n[Profiling report]:\n").to_string());
         text.push_str(

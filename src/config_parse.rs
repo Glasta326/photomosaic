@@ -30,7 +30,7 @@ pub struct Config {
     /// The number of evolutionary cycles for each image placed to the canvas
     pub evo_cycles: usize,
 
-    /// The program will run this many candidates when evolving one image
+    /// The program will simulate and keep track of this many candidates when evolving one image
     pub candidates_per_generation: usize,
 
     /// The total number of images that will be placed onto the canvas overall
@@ -54,6 +54,21 @@ pub struct ConfigData {
     pub child_count: usize,
     pub atlas_entry_count: u32,
 }
+impl std::fmt::Display for ConfigData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "
+atlas dimensions:  {:?}
+target dimensions: {:?}
+child count:       {}
+atlas_entry_count: {}",
+            self.atlas_dimensions, self.target_dimensions, self.child_count, self.atlas_entry_count
+        )?;
+        return Ok(());
+    }
+}
+
 impl ConfigData {
     pub fn init(candidate_count: usize, threshold: usize) -> Self {
         return ConfigData {
@@ -67,7 +82,8 @@ impl ConfigData {
 
 impl Config {
     pub fn display(&self) -> String {
-        return format!("
+        return format!(
+            "
 target:             {}
 atlas texture:      {}
 atlas json:         {}
@@ -104,9 +120,10 @@ impl Default for Config {
             target_texture: PathBuf::from("debug/testing_input/target.png"),
             atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.png"),
             atlas_json_fp: PathBuf::from("debug/testing_input/atlas.json"),
-            profile_log_fp: std::env::current_dir().expect("The current working directory could not be opened."),
+            profile_log_fp: std::env::current_dir()
+                .expect("The current working directory could not be opened."),
             downscale_factor: 10.0,
-            seed: rand::random::<u64>(),// Default is random. Set-seeds would cause the same image each time
+            seed: rand::random::<u64>(), // Default is random. Set-seeds would cause the same image each time
             survival_threshold: 5,
             evo_cycles: 10,
             candidates_per_generation: 500,
@@ -114,7 +131,7 @@ impl Default for Config {
             mutation_strength: 0.1,
             extra_data: ConfigData::init(500, 5),
             enable_hue: false,
-            enable_video: false
+            enable_video: false,
         }
     }
 }
@@ -141,7 +158,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut atlas_json_path = default.atlas_json_fp;
     let mut profile_log_fp = default.profile_log_fp;
     let mut downscale_factor = default.downscale_factor;
-    let mut seed = default.seed; 
+    let mut seed = default.seed;
     let mut survival_threshold = default.survival_threshold;
     let mut evo_cycles: usize = default.evo_cycles;
     let mut candidates_per_gen: usize = default.candidates_per_generation;
@@ -248,6 +265,13 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         atlas_json_path.set_extension("json");
     }
 
+    safety_checks(
+        &mut downscale_factor,
+        &mut survival_threshold,
+        &mut candidates_per_gen,
+        &mut mutation_strength,
+    );
+
     // Calculate extra miscelaneous data from user specified configuration
     // TODO: this is bad
     // the data in here is half calculated on init and half done later and thats bad coding
@@ -267,8 +291,53 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         mutation_strength,
         enable_hue: hue_shift,
         extra_data: extra_data,
-        enable_video: video_gen
+        enable_video: video_gen,
     }));
+}
+
+//mmm i love dereferencing
+fn safety_checks(
+    downscale_factor: &mut f32,
+    survival_threshold: &mut usize,
+    candidates_per_gen: &mut usize,
+    mutation_strength: &mut f32,
+) {
+    if *downscale_factor <= 0.0 {
+        println!(
+            "Automatically adjusted downscale factor to 0 as it was {}, which is not allowed!",
+            *downscale_factor
+        );
+        *downscale_factor = 0.0;
+    }
+
+    // Ensure candidate count is > survival threshold
+    if *candidates_per_gen < *survival_threshold {
+        println!(
+            "Automatically adjusted candidate count from {} to {} as candidate count must be greater than surivial threshold!",
+            *candidates_per_gen, *survival_threshold
+        );
+        *candidates_per_gen = *survival_threshold;
+    }
+
+    // Ensure candidate count is a multiple of survival threshold
+    let offset = *candidates_per_gen % *survival_threshold;
+    if offset != 0 {
+        println!(
+            "Automatically adjusted candidate count from {} to {} to ensure divisiblity!",
+            *candidates_per_gen,
+            *candidates_per_gen + (*survival_threshold - offset)
+        );
+        *candidates_per_gen += *survival_threshold - offset;
+    }
+
+    if *mutation_strength < 0.0 || *mutation_strength > 1.0 {
+        println!(
+            "Automatically clamped mutation strength to {} as it was {}, which is outside the bounds of [0.0, 1.0]",
+            mutation_strength.clamp(0.0, 1.0),
+            *mutation_strength
+        );
+        *mutation_strength = mutation_strength.clamp(0.0, 1.0);
+    }
 }
 
 fn print_help() {

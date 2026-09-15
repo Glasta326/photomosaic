@@ -33,7 +33,7 @@ impl std::fmt::Display for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}\nHuge: {}",
+            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}\nHue: {}",
             self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale, self.hue
         )
     }
@@ -69,23 +69,15 @@ impl Candidate {
         // then, lerp between our current position x,y to the new position x,y individiually to get the final position
         let random_pos = math_utils::random_point_2d(cfg.extra_data.target_dimensions, rng);
         let new_pos = (
-            math_utils::lerp(
-                self.pos_x as f32,
-                random_pos.0 as f32,
-                strength,
-            ),
-            math_utils::lerp(
-                self.pos_y as f32,
-                random_pos.1 as f32,
-                strength,
-            ),
+            math_utils::lerp(self.pos_x as f32, random_pos.0 as f32, strength),
+            math_utils::lerp(self.pos_y as f32, random_pos.1 as f32, strength),
         );
 
         // For angle, we want to either rotate left or right, and an amount decided by a range, with the limit on that range being affected by mutation strength
         // so for example, if we are at angle 0.0, we randomly choose to rotate clockwise, and mutation strength is 0.2, so we pick an amount to rotate
         // between 0 and +PI * 0.2
-        let random_off = math_utils::coinflip(rng)
-            * rng.random_range(0.0..PI as f32 * strength) as f32;
+        let random_off =
+            math_utils::coinflip(rng) * rng.random_range(0.0..PI as f32 * strength) as f32;
         let new_ang = math_utils::wrap_angle(self.rotation + random_off);
 
         // Scale is slightly different due to being a boundless quantity
@@ -104,12 +96,12 @@ impl Candidate {
         if cfg.enable_hue {
             // Hue rotation value
             // Again, like in rotation, it's a relative offset to the parent's value
-            let random_off = math_utils::coinflip(rng)
-                * rng.random_range(0.0..PI as f32 * strength) as f32;
+            let random_off =
+                math_utils::coinflip(rng) * rng.random_range(0.0..PI as f32 * strength) as f32;
             let new_hue_angle = math_utils::wrap_angle(self.hue.to_radians() + random_off); // Normalise into 0-2pi range
             new_hue = new_hue_angle.to_degrees(); // Hue is in degrees
         }
-        
+
         return Candidate::new(
             self.texture_id,
             new_pos.0,
@@ -131,8 +123,7 @@ impl Candidate {
             hue: {
                 if cfg.enable_hue {
                     rng.random_range(-180.0..180.0)
-                }
-                else {
+                } else {
                     0.0
                 }
             },

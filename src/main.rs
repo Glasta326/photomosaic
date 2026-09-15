@@ -1,11 +1,11 @@
 use std::{
-    fs,
+    f32, fs,
     io::{self, Write},
     process::{Command, Stdio},
     time::Duration,
 };
 
-use rand::{RngExt, SeedableRng, rngs::StdRng};
+use rand::{SeedableRng, rngs::StdRng};
 use wgpu::naga::back::spv::SourceLanguage::Rust;
 
 use crate::{
@@ -76,6 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = gpu::GpuContext::init(&cfg, atlas_texture, atlas_entries, target_texture)?;
     let score_shader = gpu::ScoreShader::init(&cfg, &context)?;
     let draw_shader = gpu::DrawShader::init(&cfg, &context)?;
+    let candidate_gen_shader = gpu::CandidateGenShader::init(&cfg, &context)?;
 
     // Initalise other resources
 
@@ -93,8 +94,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
     let mut tracked_best_score = f32::INFINITY;
     let mut recent_history = ShiftRegister::new();
-    // Dynamically adjusted mutation strength reduction, brings the value closer to zero as progress continues to stagnate
-    let mut mutation_strength_reduction = 0.0;
 
     performance.record(Metric::Initialization, initialization_sw.elapse());
 
@@ -128,42 +127,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             performance.record(Metric::ScoreIndexSorting, score_index_sorting_sw.elapse());
 
-            candidate_breeding_sw.start(None);
             if e < cfg.evo_cycles {
                 // We go down the list of candidates in desceding order, untill we hit our limit determined by the survival threshold
                 // Each of these candidates is allowed to create children, and then both the candidate and the child is moved into the new array
-                let mut new_candidates: Vec<Candidate> =
-                    Vec::with_capacity(cfg.candidates_per_generation);
-
-
-                // TODO: replace this with a compute shader to create new candidates?
-                // its eating almost as much time as the fucking score shader does
-                // cant have rng in shaders so might need to implement seed-based pseudorandomness manually which could be fun
+                let mut parents: Vec<Candidate> = Vec::with_capacity(cfg.survival_threshold);
                 for j in 0..cfg.survival_threshold {
                     let index = indicies[j];
                     let candidate = candidates[index];
-                    // First add all the children
-                    for _k in 0..cfg.extra_data.child_count {
-                        new_candidates.push(candidate.mutate_new(
-                            &cfg,
-                            &mut rng,
-                            cfg.mutation_strength - mutation_strength_reduction,
-                        ));
-                    }
-                    // Then add the parent
-                    new_candidates.push(candidate);
+                    parents.push(candidate);
                 }
-                // Override the candidate pool with our new candidates
-                candidates = new_candidates;
+                candidates = candidate_gen_shader.run(
+                    &mut performance,
+                    &cfg,
+                    &mut rng,
+                    &context,
+                    &parents,
+                )?;
             } else {
                 // This is the final iteration, so we get the best candidate and put it to the top
                 candidates[0] = candidates[indicies[0]];
                 candidate_scores[0] = candidate_scores[indicies[0]];
             }
-            performance.record(
-                Metric::CandidateReproduction,
-                candidate_breeding_sw.elapse(),
-            );
         }
 
         // Ensure winner is actually an improvment
@@ -202,18 +186,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         );
-        // This is here because we update history in the fucking print statement above
-        mutation_strength_reduction = math_utils::remap(
-            recent_history.fullness(),
-            0.0,
-            1.0,
-            0.0,
-            cfg.mutation_strength - 0.001,
-        );
         print!(
-            "\r\x1b[2KMutation strength reduction: {:.1}% : [{:.4}]\n",
-            (mutation_strength_reduction / cfg.mutation_strength) * 100.0,
-            cfg.mutation_strength - mutation_strength_reduction
+            "\r\x1b[2KRecent failure percent: {:.1}%\n",
+            (recent_history.fullness()) * 100.0
         );
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
 
@@ -259,7 +234,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(video) = video {
         video.finish()?;
     }
-    performance.save_results(&cfg)?;
+    performance.save_results(
+        &cfg,
+        candidate_scores[0]
+            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+    )?;
 
     println!("Done!");
     return Ok(());
