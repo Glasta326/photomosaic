@@ -57,9 +57,13 @@ impl GpuContext {
         if !supports_compute {
             return Err("Gpu does not support compute shaders".into());
         }
-
+        // TODO: dynamically request whatever the maximum the gpu can support
+        // also potentially error if the calculated candidate x pixel count would be too large
+        let mut device_descriptor = wgpu::DeviceDescriptor::default();
+        device_descriptor.required_limits.max_storage_buffer_binding_size = 2147483644; // OH YEAH
         let (device, queue) =
-            pollster::block_on(_adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
+            pollster::block_on(_adapter.request_device(&device_descriptor))?;
+        println!("{:?}",device);
 
         let buffers = Buffers::new(
             cfg,

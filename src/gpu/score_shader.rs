@@ -2,11 +2,16 @@ use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, include_wgsl};
 
 use crate::{
-    candidate::Candidate, config_parse::Config, gpu::context::GpuContext, profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch}, utils::buffer_utils,
+    candidate::Candidate,
+    config_parse::Config,
+    gpu::context::GpuContext,
+    profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch},
+    utils::buffer_utils,
 };
 
 pub struct ScoreShader {
-    pipeline: wgpu::ComputePipeline,
+    score_pipeline: wgpu::ComputePipeline,
+    reduce_pipeline: wgpu::ComputePipeline,
     bind_group: wgpu::BindGroup,
 
     buffers: ScoreBuffers,
@@ -16,6 +21,11 @@ struct ScoreBuffers {
     /// This is the array of candidate info, for example, an entry may look like: {image_id: 0, rotation: 0.2324, scale: 1.56}.
     /// Changes after every cycle
     input_candidate_buffer: wgpu::Buffer,
+
+    /// This holds the intermediate pixel scoring, before the reduction shader processes it and outputs it in output_score_buffer
+    /// Changes after every cycle
+    /// WARNING: This buffer gets extremely large. A 1920x1080 canvas with 1000 candidates will consume 8,294,400,000 (~8.2GB) bytes of VRAM!
+    internal_pixel_score_buffer: wgpu::Buffer,
 
     /// This is the buffer the final color difference score is put into for a candiate.
     /// Changes after every cycle
@@ -28,7 +38,7 @@ struct ScoreBuffers {
 impl ScoreShader {
     pub fn init(cfg: &Config, context: &GpuContext) -> Result<Self, Box<dyn std::error::Error>> {
         let _d = Dropwatch::new("ScoreShader init");
-        
+
         let shader_module = context
             .device
             .create_shader_module(include_wgsl!("shaders/score_shader.wgsl"));
@@ -95,9 +105,20 @@ impl ScoreShader {
                             },
                             count: None,
                         },
-                        // Output score buffer
+                        // Internal pixel scores buffer
                         wgpu::BindGroupLayoutEntry {
                             binding: 5,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Output score buffer
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 6,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -118,16 +139,29 @@ impl ScoreShader {
                     immediate_size: 0,
                 });
 
-        let pipeline = context
-            .device
-            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("Score shader: Pipeline"),
-                layout: Some(&pipeline_layout),
-                module: &shader_module,
-                entry_point: None, // One entry point for now
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let score_pipeline =
+            context
+                .device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("Score shader: Score pipeline"),
+                    layout: Some(&pipeline_layout),
+                    module: &shader_module,
+                    entry_point: Some("score_3D"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
+
+        let reduce_pipeline =
+            context
+                .device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("Score shader: Reduction pipeline"),
+                    layout: Some(&pipeline_layout),
+                    module: &shader_module,
+                    entry_point: Some("reduce"),
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    cache: None,
+                });
 
         let buffers = ScoreBuffers::new(cfg, context);
 
@@ -177,16 +211,22 @@ impl ScoreShader {
                         binding: 4,
                         resource: buffers.input_candidate_buffer.as_entire_binding(),
                     },
-                    // Output score buffer
+                    // Internal pixel scores buffer
                     wgpu::BindGroupEntry {
                         binding: 5,
+                        resource: buffers.internal_pixel_score_buffer.as_entire_binding(),
+                    },
+                    // Output score buffer
+                    wgpu::BindGroupEntry {
+                        binding: 6,
                         resource: buffers.output_score_buffer.as_entire_binding(),
                     },
                 ],
             });
 
         return Ok(ScoreShader {
-            pipeline,
+            score_pipeline,
+            reduce_pipeline,
             bind_group,
             buffers,
         });
@@ -201,7 +241,7 @@ impl ScoreShader {
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         let mut sw = Stopwatch::new();
         sw.start(None);
-        
+
         // Copy data into our candidate buffer
         context.queue.write_buffer(
             &self.buffers.input_candidate_buffer,
@@ -215,20 +255,32 @@ impl ScoreShader {
                 label: Some("Score shader: Encoder"),
             });
 
-        // Set up the compute pass
+        // Set up the compute passes
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
-            let workgroup_count = cfg.candidates_per_generation.div_ceil(64);
-            // println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Score shader: Compute pass"),
                 timestamp_writes: None,
             });
 
-            compute_pass.set_pipeline(&self.pipeline);
+            // Takes the candidates, and generates a score for every candidate/pixel
+            compute_pass.set_pipeline(&self.score_pipeline);
             compute_pass.set_bind_group(0, &self.bind_group, &[]);
+            compute_pass.dispatch_workgroups(
+                cfg.candidates_per_generation.div_ceil(4) as u32,
+                cfg.extra_data.target_dimensions.0.div_ceil(8),
+                cfg.extra_data.target_dimensions.1.div_ceil(8),
+            );
 
-            compute_pass.dispatch_workgroups(workgroup_count as u32, 1, 1);
+            // Takes the result fom the scoring shader, and condenses the candidate * pixel_y * pixel_y sized score array into a score for each candidate
+            // Takes the candidates, and generates a score for every candidate/pixel
+            compute_pass.set_pipeline(&self.reduce_pipeline);
+            compute_pass.set_bind_group(0, &self.bind_group, &[]);
+            compute_pass.dispatch_workgroups(
+                cfg.candidates_per_generation as u32,
+                1,
+                1,
+            );
         }
 
         // Get data into a mapped buffer so CPU can read it
@@ -245,7 +297,7 @@ impl ScoreShader {
         let result_slice = self.buffers.readback_buffer.slice(std::ops::RangeFull);
         result_slice.map_async(wgpu::MapMode::Read, |_| {});
         context.device.poll(wgpu::PollType::wait_indefinitely())?;
-
+        
         let result: Vec<f32> =
             bytemuck::allocation::pod_collect_to_vec(&result_slice.get_mapped_range());
 
@@ -254,7 +306,6 @@ impl ScoreShader {
         self.buffers.readback_buffer.unmap();
 
         rs.record(Metric::ScoreShader, sw.elapse());
-
         return Ok(result);
     }
 }
@@ -268,27 +319,53 @@ impl ScoreBuffers {
             mapped_at_creation: false,
         });
 
+        // This scales with canvas width, height, and candidate count. Thus this tends to get extremely large
+        //TODO: Potentially make our owned fixed-point data type with as few bit as possible instead of using f32
+        // 1920x1080x1000candidate image results in 2073600000 values
+        // using f32, each value is 4 bytes, so that results in nearly 8gb of vram usage
+        // the internal score value will never exceed 2, as colors are 4d where each value ranges from 0-1, so 4d pythag distance gives a maximum of 2
+        // that means we could split it:
+        // 2 .765625
+        // 10.110001
+        // if we want to use a single byte,
+        // however that might not be precise enough, but using 2 bytes:
+        // 2 .76568603515625
+        // 10.11000100000001
+        // could also just not use floats and have the pixel score be calculated as u16 or something and just map it back into floats during reduction?
+        let pixel_score_buffer_size = buffer_utils::get_padded_buffer_size::<f32>(
+            cfg.candidates_per_generation
+                * cfg.extra_data.target_dimensions.0 as usize
+                * cfg.extra_data.target_dimensions.1 as usize,
+        );
+        let internal_pixel_score_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Score shader: Output buffer"),
+            size: pixel_score_buffer_size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+
         // Pre-calculate because it's used twice
         // Yeah i know the compiler will optimise it away anyway but let me have a win ok
-        let buffer_size =
+        let output_buffer_size =
             buffer_utils::get_padded_buffer_size::<f32>(cfg.candidates_per_generation);
 
         let output_score_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Score shader: Output buffer"),
-            size: buffer_size,
+            size: output_buffer_size,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
 
         let readback_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Score shader: Readback buffer"),
-            size: buffer_size,
+            size: output_buffer_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
 
         return ScoreBuffers {
             input_candidate_buffer: candidate_data_buffer,
+            internal_pixel_score_buffer,
             output_score_buffer,
             readback_buffer,
         };

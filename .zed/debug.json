@@ -27,13 +27,13 @@
 
     "args": [
       "-a", "debug/testing_input/atlas.png",
-      "-t", "debug/testing_input/target.jpg",
+      "-t", "debug/testing_input/bluestreet.jpg",
       "-pl", "debug/testing_output",
-      "--pixel_target", "4500",
+      "--pixel_target", "20000",
       //"--seed", "12504",
-      "--survival_threshold", "12",
+      "--survival_threshold", "60",
       "--evolution_cycles", "12",
-      "--candidates", "1200",
+      "--candidates", "3000",
       "--total_images", "500",
       "--mutation_strength","0.1",
       "--hue_shift",

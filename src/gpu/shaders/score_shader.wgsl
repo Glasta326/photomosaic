@@ -12,7 +12,7 @@ struct Candidate {
     pos_y: f32,
     rotation: f32,
     scale: f32,
-    hue: f32
+    hue: f32,
 };
 
 @group(0) @binding(0) var input_atlas_texture: texture_2d<f32>;
@@ -21,45 +21,43 @@ struct Candidate {
 @group(0) @binding(3) var input_canvas_texture: texture_2d<f32>;
 
 @group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
-@group(0) @binding(5) var<storage,read_write> output_score: array<f32>;
+@group(0) @binding(5) var<storage,read_write> internal_candidate_pixel_scores: array<f32>;
+@group(0) @binding(6) var<storage,read_write> output_score: array<f32>;
 
-@compute @workgroup_size(64)
-fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let thread_index = global_id.x;
+@compute @workgroup_size(4,8,8)
+fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let candidate_index = global_id.x;
+    let p_x = global_id.y;
+    let p_y = global_id.z;
 
-    if thread_index > arrayLength(&input_candidates) {
-        output_score[thread_index] = 0.0; // if for any reason we have more threads than candidates just set to 0 so the overall score is unaffected
+    let canvas_texture_size = textureDimensions(input_canvas_texture);
+
+    if candidate_index >= arrayLength(&input_candidates) {
+        return;
+    }
+    if p_x >= canvas_texture_size.x || p_y >= canvas_texture_size.y {
         return;
     }
 
-    let canvas_texture_size = textureDimensions(input_canvas_texture);
-    let this_candidate = input_candidates[thread_index];
+    let this_candidate = input_candidates[candidate_index];
+    let coords = vec2<u32>(p_x, p_y);
 
-    // Total color difference score for this candidate
-    var score_sum = 0.0;
+    // Get the post-transform pixel from the atlas
+    let candidate_pixel_base = get_atlas_pixel_from_candidate(this_candidate, coords);
+    let candidate_pixel_hueshifted = shift_hue(candidate_pixel_base, this_candidate.hue);
 
-    // Iterate over every pixel in the canvas image and cal
-    for (var y: u32 = 0; y < canvas_texture_size.y; y++) {
-        for (var x: u32 = 0; x < canvas_texture_size.x; x++) {
-            let coords = vec2<u32>(x, y);
+    // Simulate drawing to the canvas
+    let canvas_pixel = textureLoad(input_canvas_texture, coords, 0);
+    let result = draw(candidate_pixel_hueshifted, canvas_pixel);
 
-            // Get the post-transform pixel from the atlas
-            let candidate_pixel_base = get_atlas_pixel_from_candidate(this_candidate, coords);
-            let candidate_pixel_hueshifted = shift_hue(candidate_pixel_base, this_candidate.hue);
-            
-            let canvas_pixel = textureLoad(input_canvas_texture, coords, 0);
+    // Calculate how close this result is to the target image
+    let target_pixel = textureLoad(input_target_texture, coords, 0);
+    let score = distance(result, target_pixel);
 
-            // Simulate drawing to the canvas
-            let result = draw(candidate_pixel_hueshifted, canvas_pixel);
-
-            // Calculate how close this result is to the target image
-            let target_pixel = textureLoad(input_target_texture, coords, 0);
-            let score = distance(result, target_pixel);
-
-            score_sum += score;
-        }
-    }
-    output_score[thread_index] = score_sum;
+    // store output score for this candidate pixel
+    let pixel_index = p_y * canvas_texture_size.x + p_x;
+    let output_index = candidate_index * (canvas_texture_size.x * canvas_texture_size.y) + pixel_index;
+    internal_candidate_pixel_scores[output_index] = score;
 }
 
 // Alpha-composite drawing function
@@ -140,14 +138,14 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
 
     var hue = 0.0;
 
-    if (delta != 0.0) {
-        if (max_c == rgb.r) {
+    if delta != 0.0 {
+        if max_c == rgb.r {
             hue = 60.0 * ((rgb.g - rgb.b) / delta);
 
-            if (hue < 0.0) {
+            if hue < 0.0 {
                 hue += 360.0;
             }
-        } else if (max_c == rgb.g) {
+        } else if max_c == rgb.g {
             hue = 60.0 * ((rgb.b - rgb.r) / delta + 2.0);
         } else {
             hue = 60.0 * ((rgb.r - rgb.g) / delta + 4.0);
@@ -168,15 +166,15 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
 
     var rgb_prime = vec3<f32>(0.0);
 
-    if (h < 1.0) {
+    if h < 1.0 {
         rgb_prime = vec3<f32>(chroma, x, 0.0);
-    } else if (h < 2.0) {
+    } else if h < 2.0 {
         rgb_prime = vec3<f32>(x, chroma, 0.0);
-    } else if (h < 3.0) {
+    } else if h < 3.0 {
         rgb_prime = vec3<f32>(0.0, chroma, x);
-    } else if (h < 4.0) {
+    } else if h < 4.0 {
         rgb_prime = vec3<f32>(0.0, x, chroma);
-    } else if (h < 5.0) {
+    } else if h < 5.0 {
         rgb_prime = vec3<f32>(x, 0.0, chroma);
     } else {
         rgb_prime = vec3<f32>(chroma, 0.0, x);
@@ -186,4 +184,47 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
     let result_rgb = rgb_prime + vec3<f32>(m);
 
     return vec4<f32>(result_rgb, rgba.a);
+}
+
+var<workgroup> partial_sums: array<f32,256>;
+@compute @workgroup_size(256)
+fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
+    let candidate_index = workgroup_id.x;
+    let thread_index = local_id.x;
+    
+    let canvas_texture_size = textureDimensions(input_canvas_texture);
+    let pixel_count = canvas_texture_size.x * canvas_texture_size.y;
+    let base = candidate_index * pixel_count;
+
+    var sum = 0.0;
+
+    // Each thread sums a portion of this candidate's pixels.
+    var i = thread_index;
+
+    while i < pixel_count {
+        sum += internal_candidate_pixel_scores[base + i];
+        i += 256u;
+    }
+
+    partial_sums[thread_index] = sum;
+
+    workgroupBarrier();
+
+    // Parallel reduction.
+    var stride = 128u;
+
+    while stride > 0u {
+        if thread_index < stride {
+            partial_sums[thread_index] += partial_sums[thread_index + stride];
+        }
+
+        workgroupBarrier();
+
+        stride /= 2u;
+    }
+
+    // One final value for this candidate.
+    if thread_index == 0u {
+        output_score[candidate_index] = partial_sums[0];
+    }
 }
