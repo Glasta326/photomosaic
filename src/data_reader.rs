@@ -14,6 +14,13 @@ pub fn read_atlas_data(
     let atlas_texture = read_atlas_texture(&cfg)?;
     let atlas_json = read_atlas_json(&cfg)?;
 
+    // Progress info
+    println!(
+        "Loaded {} by {} texture atlas with {} entries",
+        atlas_texture.width(),
+        atlas_texture.height(),
+        atlas_json.len()
+    );
     return Ok((atlas_texture, atlas_json));
 }
 
@@ -171,7 +178,11 @@ pub fn read_target_texture(cfg: &mut Config) -> Result<RgbaImage, Box<dyn std::e
     let mut target_texture = image::open(provided_target_texture_fp)?;
 
     // See documentation of cfg.pixel_target for details
-    let base_pixel_count = target_texture.width() * target_texture.height();
+    let base_image_width = target_texture.width();
+    let base_image_height = target_texture.height();
+
+    // ensure pixel target is reasonable and calculate downscale factor
+    let base_pixel_count = base_image_width * base_image_height;
     if base_pixel_count < cfg.pixel_target {
         println!(
             "Automatically clamped pixel_target from {} down to {} as it was larger than the total number of pixels in the target image",
@@ -188,5 +199,12 @@ pub fn read_target_texture(cfg: &mut Config) -> Result<RgbaImage, Box<dyn std::e
         image::imageops::FilterType::Lanczos3,
     );
 
+    // Print progress info using the pre-downscaled width and height
+    println!(
+        "Loaded {} by {} target texture: [{}]",
+        base_image_width,
+        base_image_height,
+        cfg.target_texture.file_name().unwrap().display()
+    );
     return Ok(target_texture.to_rgba8());
 }

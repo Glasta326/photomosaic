@@ -50,23 +50,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the rng from the config seed
     let mut rng = StdRng::seed_from_u64(cfg.seed);
 
+    // Load input files
     let (atlas_texture, atlas_entries) = data_reader::read_atlas_data(&cfg)?;
-    println!(
-        "Loaded {} by {} texture atlas with {} entries",
-        atlas_texture.width(),
-        atlas_texture.height(),
-        atlas_entries.len()
-    );
-
     let target_texture = data_reader::read_target_texture(&mut cfg)?;
-    println!(
-        "Loaded {} by {} target texture: [{}]",
-        target_texture.width(),
-        target_texture.height(),
-        cfg.target_texture.file_name().unwrap().display()
-    );
 
-    // Update cfg data
+    // Update extra cfg data
     cfg.extra_data.atlas_dimensions = atlas_texture.dimensions();
     cfg.extra_data.target_dimensions = target_texture.dimensions();
     cfg.extra_data.atlas_entry_count = atlas_entries.len() as u32;
