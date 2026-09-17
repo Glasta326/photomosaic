@@ -36,8 +36,8 @@ impl VideoWriter {
                 "-video_size",
                 &format!(
                     "{}x{}",
-                    context.buffers.output_canvas_texture.width(),
-                    context.buffers.output_canvas_texture.height()
+                    context.buffers.unscaled_canvas_texture.width(),
+                    context.buffers.unscaled_canvas_texture.height()
                 ),
                 "-framerate",
                 &60.to_string(),

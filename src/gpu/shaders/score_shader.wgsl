@@ -27,8 +27,8 @@ struct Candidate {
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let thread_index = global_id.x;
 
-    if thread_index > arrayLength(&output_score) {
-        output_score[thread_index] = 0.0; // If it's out of the image bounds then it shouldnt change the score
+    if thread_index > arrayLength(&input_candidates) {
+        output_score[thread_index] = 0.0; // if for any reason we have more threads than candidates just set to 0 so the overall score is unaffected
         return;
     }
 

@@ -28,10 +28,10 @@ pub struct Buffers {
 
     /// This is the downscaled canvas that is drawn to over time.
     /// Changes after every cycle
-    pub input_canvas_texture: wgpu::Texture,
+    pub scaled_canvas_texture: wgpu::Texture,
 
-    /// This is the full-scale canvas that is saved and outputted at the end of operations
-    pub output_canvas_texture: wgpu::Texture,
+    /// This is the full-scale canvas that is saved and outputted at the end of the program
+    pub unscaled_canvas_texture: wgpu::Texture,
 }
 
 impl GpuContext {
@@ -103,8 +103,8 @@ impl Buffers {
 
         // The output canvas is scaled up by the downscale factor
         let output_canvas_texture_size = wgpu::Extent3d {
-            width: (target_texture.width() as f32 * cfg.downscale_factor) as u32,
-            height: (target_texture.height() as f32 * cfg.downscale_factor) as u32,
+            width: (target_texture.width() as f32 * cfg.extra_data.downscale_factor) as u32,
+            height: (target_texture.height() as f32 * cfg.extra_data.downscale_factor) as u32,
             depth_or_array_layers: 1,
         };
 
@@ -205,8 +205,8 @@ impl Buffers {
 
         // Output canvas needs to have scaled-up size
         let output_canvas_texture = RgbaImage::new(
-            (cfg.extra_data.target_dimensions.0 as f32 * cfg.downscale_factor) as u32,
-            (cfg.extra_data.target_dimensions.1 as f32 * cfg.downscale_factor) as u32,
+            (cfg.extra_data.target_dimensions.0 as f32 * cfg.extra_data.downscale_factor) as u32,
+            (cfg.extra_data.target_dimensions.1 as f32 * cfg.extra_data.downscale_factor) as u32,
         );
         queue.write_texture(
             output_canvas_texture_buffer.as_image_copy(),
@@ -223,8 +223,8 @@ impl Buffers {
             input_atlas_texture: atlas_texture_buffer,
             input_atlas_entry_buffer: atlas_entry_buffer,
             input_target_texture: target_texture_buffer,
-            input_canvas_texture: input_canvas_texture_buffer,
-            output_canvas_texture: output_canvas_texture_buffer,
+            scaled_canvas_texture: input_canvas_texture_buffer,
+            unscaled_canvas_texture: output_canvas_texture_buffer,
         };
     }
 }

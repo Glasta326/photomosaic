@@ -18,8 +18,10 @@ pub struct Config {
     /// Folder path to the folder used for performance profiling logs. If not provided, will default to the same folder as the program is run in
     pub profile_log_fp: PathBuf,
 
-    /// The target image will be internally downscaled by this amount.
-    pub downscale_factor: f32,
+    /// The target image will be internally downscaled to reach this pixel target
+    /// For example, a 1920x1080 image has ~2,000,000 pixels, so if the pixel_target is 10k, it will be downscaled by ~14x
+    /// ~14x is because the total pixel count scales n², so to reduce by a factor of 200, you need to downscale by sqrt(200) ≈ 14
+    pub pixel_target: u32,
 
     /// Random seed
     pub seed: u64,
@@ -51,6 +53,8 @@ pub struct Config {
 pub struct ConfigData {
     pub atlas_dimensions: (u32, u32),
     pub target_dimensions: (u32, u32),
+    /// The target image will be internally downscaled by this amount to match the pixel target
+    pub downscale_factor: f32,
     pub child_count: usize,
     pub atlas_entry_count: u32,
 }
@@ -61,9 +65,14 @@ impl std::fmt::Display for ConfigData {
             "
 atlas dimensions:  {:?}
 target dimensions: {:?}
+downscale factor:  {}
 child count:       {}
 atlas_entry_count: {}",
-            self.atlas_dimensions, self.target_dimensions, self.child_count, self.atlas_entry_count
+            self.atlas_dimensions,
+            self.target_dimensions,
+            self.downscale_factor,
+            self.child_count,
+            self.atlas_entry_count
         )?;
         return Ok(());
     }
@@ -74,6 +83,7 @@ impl ConfigData {
         return ConfigData {
             atlas_dimensions: (0, 0),
             target_dimensions: (0, 0),
+            downscale_factor: -1.0,
             child_count: (candidate_count as f32 / threshold as f32).round() as usize - 1, // -1 to account for the parent staying alive
             atlas_entry_count: 0,
         };
@@ -88,7 +98,7 @@ target:             {}
 atlas texture:      {}
 atlas json:         {}
 profile log folder: {}
-downscale factor:   {}
+pixel target:       {}
 seed:               {}
 survival threshold: {}
 evolution cycles:   {}
@@ -101,7 +111,7 @@ video generation:   {}",
             self.atlas_texture_fp.display(),
             self.atlas_json_fp.display(),
             self.profile_log_fp.display(),
-            self.downscale_factor,
+            self.pixel_target,
             self.seed,
             self.survival_threshold,
             self.evo_cycles,
@@ -122,7 +132,7 @@ impl Default for Config {
             atlas_json_fp: PathBuf::from("debug/testing_input/atlas.json"),
             profile_log_fp: std::env::current_dir()
                 .expect("The current working directory could not be opened."),
-            downscale_factor: 10.0,
+            pixel_target: 20000,
             seed: rand::random::<u64>(), // Default is random. Set-seeds would cause the same image each time
             survival_threshold: 5,
             evo_cycles: 10,
@@ -157,7 +167,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut atlas_file_path = default.atlas_texture_fp;
     let mut atlas_json_path = default.atlas_json_fp;
     let mut profile_log_fp = default.profile_log_fp;
-    let mut downscale_factor = default.downscale_factor;
+    let mut pixel_target = default.pixel_target;
     let mut seed = default.seed;
     let mut survival_threshold = default.survival_threshold;
     let mut evo_cycles: usize = default.evo_cycles;
@@ -198,12 +208,12 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 ))?;
                 profile_log_fp = PathBuf::from(pl);
             }
-            "-ds" | "--downscale_factor" => {
+            "-pt" | "--pixel_target" => {
                 let ds = args.next().ok_or(format!(
-                    "{} was used, but no downscaling value was provided.\nHint: use -h or --help for info",
+                    "{} was used, but no target value was provided.\nHint: use -h or --help for info",
                     arg.display()
                 ))?;
-                downscale_factor = ds.to_string_lossy().into_owned().parse::<f32>()?;
+                pixel_target = ds.to_string_lossy().into_owned().parse::<u32>()?;
             }
             "-s" | "--seed" => {
                 let s = args.next().ok_or(format!(
@@ -265,12 +275,14 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         atlas_json_path.set_extension("json");
     }
 
+    // Calculate the required downscale effect for the image
+
     safety_checks(
-        &mut downscale_factor,
+        &pixel_target,
         &mut survival_threshold,
         &mut candidates_per_gen,
         &mut mutation_strength,
-    );
+    )?;
 
     // Calculate extra miscelaneous data from user specified configuration
     // TODO: this is bad
@@ -282,7 +294,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         atlas_texture_fp: atlas_file_path,
         atlas_json_fp: atlas_json_path,
         profile_log_fp,
-        downscale_factor,
+        pixel_target,
         seed,
         survival_threshold,
         evo_cycles,
@@ -297,17 +309,13 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
 
 //mmm i love dereferencing
 fn safety_checks(
-    downscale_factor: &mut f32,
+    pixel_target: &u32,
     survival_threshold: &mut usize,
     candidates_per_gen: &mut usize,
     mutation_strength: &mut f32,
-) {
-    if *downscale_factor <= 0.0 {
-        println!(
-            "Automatically adjusted downscale factor to 0 as it was {}, which is not allowed!",
-            *downscale_factor
-        );
-        *downscale_factor = 0.0;
+) -> Result<(), Box<dyn std::error::Error>> {
+    if *pixel_target <= 0 {
+        return Err(format!("pixel_target is {}, which is not allowed!", *pixel_target).into());
     }
 
     // Ensure candidate count is > survival threshold
@@ -338,6 +346,8 @@ fn safety_checks(
         );
         *mutation_strength = mutation_strength.clamp(0.0, 1.0);
     }
+
+    return Ok(());
 }
 
 fn print_help() {

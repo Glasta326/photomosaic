@@ -13,7 +13,7 @@ use crate::{
     config_parse::Config,
     datastructs::ShiftRegister,
     gpu::GpuContext,
-    profiling::{Metric, RuntimeStats, Stopwatch},
+    profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch},
     utils::{buffer_utils, math_utils},
     video_writer::VideoWriter,
 };
@@ -36,7 +36,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut initialization_sw = Stopwatch::new();
     let mut candidate_populating_sw = Stopwatch::new();
     let mut score_index_sorting_sw = Stopwatch::new();
-    let mut candidate_breeding_sw = Stopwatch::new();
     let mut video_generation_sw = Stopwatch::new();
 
     initialization_sw.start(None);
@@ -59,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         atlas_entries.len()
     );
 
-    let target_texture = data_reader::read_target_texture(&cfg)?;
+    let target_texture = data_reader::read_target_texture(&mut cfg)?;
     println!(
         "Loaded {} by {} target texture: [{}]",
         target_texture.width(),
@@ -197,18 +196,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut performance,
             &context,
             &winner,
-            &context.buffers.input_canvas_texture,
+            &context.buffers.scaled_canvas_texture,
         )?;
 
         // Scale up the winner's position and scale for the output canvas
-        winner.scale *= cfg.downscale_factor;
-        winner.pos_x *= cfg.downscale_factor;
-        winner.pos_y *= cfg.downscale_factor;
+        winner.scale *= cfg.extra_data.downscale_factor;
+        winner.pos_x *= cfg.extra_data.downscale_factor;
+        winner.pos_y *= cfg.extra_data.downscale_factor;
         draw_shader.run_large(
             &mut performance,
             &context,
             &winner,
-            &context.buffers.output_canvas_texture,
+            &context.buffers.unscaled_canvas_texture,
         )?;
 
         // Write the frame into the video, if enabled
@@ -217,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let img = buffer_utils::texture_to_u8(
                 &cfg,
                 &context,
-                &context.buffers.output_canvas_texture,
+                &context.buffers.unscaled_canvas_texture,
             )?;
             if let Some(video_writer) = &mut video {
                 video_writer.write_frame(img)?;
@@ -247,11 +246,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 // TODO: Dynamic save location based on config
 fn save_output(cfg: &Config, context: &GpuContext) -> Result<(), Box<dyn std::error::Error>> {
     let img =
-        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.input_canvas_texture)?;
+        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.scaled_canvas_texture)?;
     img.save("debug/testing_output/test_output_internal.png")?;
 
     let img =
-        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.output_canvas_texture)?;
+        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.unscaled_canvas_texture)?;
     img.save("debug/testing_output/test_output.png")?;
 
     return Ok(());

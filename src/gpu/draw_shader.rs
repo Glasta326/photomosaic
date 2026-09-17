@@ -148,7 +148,7 @@ impl DrawShader {
                         resource: wgpu::BindingResource::TextureView(
                             &context
                                 .buffers
-                                .input_canvas_texture
+                                .scaled_canvas_texture
                                 .create_view(&wgpu::TextureViewDescriptor::default()),
                         ),
                     },
@@ -196,7 +196,7 @@ impl DrawShader {
                         resource: wgpu::BindingResource::TextureView(
                             &context
                                 .buffers
-                                .output_canvas_texture
+                                .unscaled_canvas_texture
                                 .create_view(&wgpu::TextureViewDescriptor::default()),
                         ),
                     },
@@ -344,8 +344,8 @@ impl DrawBuffers {
         let output_texture_small = context.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Draw shader: small output texture"),
             size: wgpu::Extent3d {
-                width: context.buffers.input_canvas_texture.width(),
-                height: context.buffers.input_canvas_texture.height(),
+                width: context.buffers.scaled_canvas_texture.width(),
+                height: context.buffers.scaled_canvas_texture.height(),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -359,8 +359,8 @@ impl DrawBuffers {
         let output_texture_large = context.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Draw shader: small output texture"),
             size: wgpu::Extent3d {
-                width: context.buffers.output_canvas_texture.width(),
-                height: context.buffers.output_canvas_texture.height(),
+                width: context.buffers.unscaled_canvas_texture.width(),
+                height: context.buffers.unscaled_canvas_texture.height(),
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

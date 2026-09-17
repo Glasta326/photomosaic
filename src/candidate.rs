@@ -119,7 +119,7 @@ impl Candidate {
             pos_x: rng.random_range(0.0..=cfg.extra_data.target_dimensions.0 as f32),
             pos_y: rng.random_range(0.0..=cfg.extra_data.target_dimensions.1 as f32), // These don't need to be downscaled because the "target" image is already pre-downscaled by the reader
             rotation: rng.random_range(-PI..PI),
-            scale: rng.random_range(0.5..=2.0) / cfg.downscale_factor,
+            scale: rng.random_range(0.5..=2.0) / cfg.extra_data.downscale_factor,
             hue: {
                 if cfg.enable_hue {
                     rng.random_range(-180.0..180.0)

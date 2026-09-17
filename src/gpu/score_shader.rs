@@ -168,7 +168,7 @@ impl ScoreShader {
                         resource: wgpu::BindingResource::TextureView(
                             &context
                                 .buffers
-                                .input_canvas_texture
+                                .scaled_canvas_texture
                                 .create_view(&wgpu::TextureViewDescriptor::default()),
                         ),
                     },

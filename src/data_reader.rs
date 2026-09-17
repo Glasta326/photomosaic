@@ -123,7 +123,9 @@ fn read_atlas_json(cfg: &Config) -> Result<Vec<AtlasEntry>, Box<dyn std::error::
     return Ok(entries);
 }
 
-pub fn read_target_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error::Error>> {
+/// Attempts to load the user specified image, calculates the downscale factor required to meet the pixel target and applies said downscaling before returning the image
+/// cfg.extra_data.downscale_factor is set here
+pub fn read_target_texture(cfg: &mut Config) -> Result<RgbaImage, Box<dyn std::error::Error>> {
     let _d = Dropwatch::new("Target texture read");
     let provided_target_texture_fp = cfg.target_texture.clone();
 
@@ -168,10 +170,21 @@ pub fn read_target_texture(cfg: &Config) -> Result<RgbaImage, Box<dyn std::error
     // Attempt to load image file
     let mut target_texture = image::open(provided_target_texture_fp)?;
 
+    // See documentation of cfg.pixel_target for details
+    let base_pixel_count = target_texture.width() * target_texture.height();
+    if base_pixel_count < cfg.pixel_target {
+        println!(
+            "Automatically clamped pixel_target from {} down to {} as it was larger than the total number of pixels in the target image",
+            cfg.pixel_target, base_pixel_count
+        );
+        cfg.pixel_target = base_pixel_count;
+    }
+    cfg.extra_data.downscale_factor = (base_pixel_count as f32 / cfg.pixel_target as f32).sqrt();
+
     // Downscale target
     target_texture = target_texture.resize(
-        (target_texture.width() as f32 / cfg.downscale_factor) as u32,
-        (target_texture.height() as f32 / cfg.downscale_factor) as u32,
+        (target_texture.width() as f32 / cfg.extra_data.downscale_factor) as u32,
+        (target_texture.height() as f32 / cfg.extra_data.downscale_factor) as u32,
         image::imageops::FilterType::Lanczos3,
     );
 
