@@ -21,8 +21,13 @@ struct Candidate {
 @group(0) @binding(3) var input_canvas_texture: texture_2d<f32>;
 
 @group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
-@group(0) @binding(5) var<storage,read_write> internal_candidate_pixel_scores: array<f32>;
-@group(0) @binding(6) var<storage,read_write> output_score: array<f32>;
+// Say NO to pesky gpu manufactures limiting your buffer size!
+// With this simple trick, you can quadruple your max buffer size!!
+@group(0) @binding(5) var<storage,read_write> internal_candidate_pixel_scores_0: array<f32>;
+@group(0) @binding(6) var<storage,read_write> internal_candidate_pixel_scores_1: array<f32>;
+@group(0) @binding(7) var<storage,read_write> internal_candidate_pixel_scores_2: array<f32>;
+@group(0) @binding(8) var<storage,read_write> internal_candidate_pixel_scores_3: array<f32>;
+@group(0) @binding(9) var<storage,read_write> output_score: array<f32>;
 
 @compute @workgroup_size(4,8,8)
 fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -30,6 +35,10 @@ fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let p_x = global_id.y;
     let p_y = global_id.z;
     let canvas_texture_size = textureDimensions(input_canvas_texture);
+
+    let candidates_per_buffer = u32(ceil(f32(arrayLength(&input_candidates)) / 4.0)); // I believe standard u32 division ceil's by default but im paranoid
+    let buffer_index = u32(floor(f32(candidate_index) / f32(candidates_per_buffer)));
+    let local_candidate_index = candidate_index % candidates_per_buffer;
 
     // Sometimes more threads get allocated than the number of candidates we actually have, so just end early if we're an excess thread
     if candidate_index >= arrayLength(&input_candidates) {
@@ -60,8 +69,20 @@ fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // store output score for this candidate pixel
     let pixel_index = p_y * canvas_texture_size.x + p_x;
-    let output_index = candidate_index * (canvas_texture_size.x * canvas_texture_size.y) + pixel_index;
-    internal_candidate_pixel_scores[output_index] = score;
+    let output_index = local_candidate_index * (canvas_texture_size.x * canvas_texture_size.y) + pixel_index;
+
+    if buffer_index == 0 {
+        internal_candidate_pixel_scores_0[output_index] = score;
+    }
+    if buffer_index == 1 {
+        internal_candidate_pixel_scores_1[output_index] = score;
+    }
+    if buffer_index == 2 {
+        internal_candidate_pixel_scores_2[output_index] = score;
+    }
+    if buffer_index == 3 {
+        internal_candidate_pixel_scores_3[output_index] = score;
+    }
 }
 
 // Alpha-composite drawing function
@@ -190,7 +211,6 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
     return vec4<f32>(result_rgb, rgba.a);
 }
 
-
 // Explanation for myself:
 // So the way shaders are structured, each workgroup contains a number of threads, so you essentially have:
 // for workgroup in 0..10
@@ -212,11 +232,15 @@ fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocat
     let this_candidate_index = workgroup_id.x;
     let this_thread_index = local_id.x;
 
+    let candidates_per_buffer = u32(ceil(f32(arrayLength(&input_candidates)) / 4.0)); // I believe standard u32 division ceil's by default but im paranoid
+    let buffer_index = u32(floor(f32(this_candidate_index) / f32(candidates_per_buffer)));
+    let local_candidate_index = this_candidate_index % candidates_per_buffer;
+
     // The giant array of data points is essentially split like:
     // [candidate01 data..., candidate02 data..., ect..]
     // so we need to move into our candidate's block of memory
     // each candidate's block of memory contains as many values as there are pixels
-    let this_candidate_data_entry_offset = this_candidate_index * pixel_count;
+    let this_candidate_data_entry_offset = local_candidate_index * pixel_count;
 
     // And because each candidate data "block" is pixel_count wide, we need to limit accesses to this range:
     let this_candidate_data_limit = this_candidate_data_entry_offset + pixel_count;
@@ -226,8 +250,21 @@ fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocat
     // So first, we need to condense the values array down to 256 values
     // We do this by summing each 256'th value in the array
     var this_thread_sum = 0.0;
-    for (var i = this_thread_index; i < this_candidate_data_limit; i += 256) {
-        this_thread_sum += internal_candidate_pixel_scores[this_candidate_data_entry_offset + i];
+    for (var i = this_thread_index; i < pixel_count; i += 256) {
+        let index = this_candidate_data_entry_offset + i;
+
+        if buffer_index == 0 {
+            this_thread_sum += internal_candidate_pixel_scores_0[index];
+        }
+        if buffer_index == 1 {
+            this_thread_sum += internal_candidate_pixel_scores_1[index];
+        }
+        if buffer_index == 2 {
+            this_thread_sum += internal_candidate_pixel_scores_2[index];
+        }
+        if buffer_index == 3 {
+            this_thread_sum += internal_candidate_pixel_scores_3[index];
+        }
     }
 
     // For a more visual explanation, suppose we only have 5 threads, and the image is 4x4 so we have 16 values per candidate

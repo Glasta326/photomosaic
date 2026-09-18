@@ -24,10 +24,14 @@ struct ScoreBuffers {
     /// Changes after every cycle
     input_candidate_buffer: wgpu::Buffer,
 
-    /// This holds the intermediate pixel scoring, before the reduction shader processes it and outputs it in output_score_buffer
-    /// Changes after every cycle
-    /// WARNING: This buffer gets extremely large. A 1920x1080 canvas with 1000 candidates will consume 8,294,400,000 (~8.2GB) bytes of VRAM!
-    internal_pixel_score_buffer: wgpu::Buffer,
+    /// These hold the intermediate pixel scoring, before the reduction shader processes them and outputs the final candidate score in output_score_buffer
+    /// These change after every cycle
+    /// WARNING: These buffers can get extremely large. A 1920x1080 canvas with 1000 candidates will consume 8,294,400,000 (~8.2GB) bytes of VRAM!
+    /// WARNING: In such case, each buffer would reach ~2GB on its own
+    internal_pixel_score_buffer_0: wgpu::Buffer,
+    internal_pixel_score_buffer_1: wgpu::Buffer,
+    internal_pixel_score_buffer_2: wgpu::Buffer,
+    internal_pixel_score_buffer_3: wgpu::Buffer,
 
     /// This is the buffer the final color difference score is put into for a candiate.
     /// Changes after every cycle
@@ -107,7 +111,7 @@ impl ScoreShader {
                             },
                             count: None,
                         },
-                        // Internal pixel scores buffer
+                        // Internal pixel scores buffers
                         wgpu::BindGroupLayoutEntry {
                             binding: 5,
                             visibility: wgpu::ShaderStages::COMPUTE,
@@ -118,9 +122,39 @@ impl ScoreShader {
                             },
                             count: None,
                         },
-                        // Output score buffer
                         wgpu::BindGroupLayoutEntry {
                             binding: 6,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 7,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 8,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        // Output score buffer
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 9,
                             visibility: wgpu::ShaderStages::COMPUTE,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Storage { read_only: false },
@@ -213,14 +247,26 @@ impl ScoreShader {
                         binding: 4,
                         resource: buffers.input_candidate_buffer.as_entire_binding(),
                     },
-                    // Internal pixel scores buffer
+                    // Internal pixel scores buffers
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: buffers.internal_pixel_score_buffer.as_entire_binding(),
+                        resource: buffers.internal_pixel_score_buffer_0.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: buffers.internal_pixel_score_buffer_1.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: buffers.internal_pixel_score_buffer_2.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: buffers.internal_pixel_score_buffer_3.as_entire_binding(),
                     },
                     // Output score buffer
                     wgpu::BindGroupEntry {
-                        binding: 6,
+                        binding: 9,
                         resource: buffers.output_score_buffer.as_entire_binding(),
                     },
                 ],
@@ -304,11 +350,6 @@ impl ScoreShader {
         self.buffers.readback_buffer.unmap();
 
         rs.record(Metric::ScoreShader, sw.elapse());
-
-        for v in result {
-            println!("{:.6}",v);
-        }
-        exit(-1);
         return Ok(result);
     }
 }
@@ -337,7 +378,7 @@ impl ScoreBuffers {
         // could also just not use floats and have the pixel score be calculated as u16 or something and just map it back into floats during reduction?
         //
         //TODO:
-        // ALSO TODO: 
+        // ALSO TODO:
         // perhaps just make a second buffer
         // because we get limited by the adapter's maximum storage buffer size
         // but we could also just make a second/3rd buffer
@@ -350,12 +391,38 @@ impl ScoreBuffers {
         // buf4: [3,7,11,15,...]
         // just like how we manually calculate the candidate padding for the single buffer, we just change that so it splits among the 4
         let pixel_score_buffer_size = buffer_utils::get_padded_buffer_size::<f32>(
-            cfg.candidates_per_generation
+            (cfg.candidates_per_generation).div_ceil(4)
                 * cfg.extra_data.target_dimensions.0 as usize
                 * cfg.extra_data.target_dimensions.1 as usize,
         );
-        let internal_pixel_score_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Score shader: Output buffer"),
+
+        let ttt = buffer_utils::get_padded_buffer_size::<f32>(
+            (cfg.candidates_per_generation)
+                * cfg.extra_data.target_dimensions.0 as usize
+                * cfg.extra_data.target_dimensions.1 as usize,
+        );
+        println!("buffer {} bytes",ttt);
+
+        let internal_pixel_score_buffer_0 = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Score shader: Internal pixel score buffer 0"),
+            size: pixel_score_buffer_size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let internal_pixel_score_buffer_1 = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Score shader: Internal pixel score buffer 1"),
+            size: pixel_score_buffer_size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let internal_pixel_score_buffer_2 = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Score shader: Internal pixel score buffer 2"),
+            size: pixel_score_buffer_size,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+        let internal_pixel_score_buffer_3 = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Score shader: Internal pixel score buffer 3"),
             size: pixel_score_buffer_size,
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
@@ -382,7 +449,10 @@ impl ScoreBuffers {
 
         return ScoreBuffers {
             input_candidate_buffer: candidate_data_buffer,
-            internal_pixel_score_buffer,
+            internal_pixel_score_buffer_0,
+            internal_pixel_score_buffer_1,
+            internal_pixel_score_buffer_2,
+            internal_pixel_score_buffer_3,
             output_score_buffer,
             readback_buffer,
         };
