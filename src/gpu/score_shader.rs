@@ -1,3 +1,5 @@
+use std::process::exit;
+
 use image::RgbaImage;
 use wgpu::{TexelCopyBufferLayout, TextureUsages, include_wgsl};
 
@@ -276,11 +278,7 @@ impl ScoreShader {
             // Takes the candidates, and generates a score for every candidate/pixel
             compute_pass.set_pipeline(&self.reduce_pipeline);
             compute_pass.set_bind_group(0, &self.bind_group, &[]);
-            compute_pass.dispatch_workgroups(
-                cfg.candidates_per_generation as u32,
-                1,
-                1,
-            );
+            compute_pass.dispatch_workgroups(cfg.candidates_per_generation as u32, 1, 1);
         }
 
         // Get data into a mapped buffer so CPU can read it
@@ -297,7 +295,7 @@ impl ScoreShader {
         let result_slice = self.buffers.readback_buffer.slice(std::ops::RangeFull);
         result_slice.map_async(wgpu::MapMode::Read, |_| {});
         context.device.poll(wgpu::PollType::wait_indefinitely())?;
-        
+
         let result: Vec<f32> =
             bytemuck::allocation::pod_collect_to_vec(&result_slice.get_mapped_range());
 
@@ -306,6 +304,11 @@ impl ScoreShader {
         self.buffers.readback_buffer.unmap();
 
         rs.record(Metric::ScoreShader, sw.elapse());
+
+        for v in result {
+            println!("{:.6}",v);
+        }
+        exit(-1);
         return Ok(result);
     }
 }
@@ -332,6 +335,20 @@ impl ScoreBuffers {
         // 2 .76568603515625
         // 10.11000100000001
         // could also just not use floats and have the pixel score be calculated as u16 or something and just map it back into floats during reduction?
+        //
+        //TODO:
+        // ALSO TODO: 
+        // perhaps just make a second buffer
+        // because we get limited by the adapter's maximum storage buffer size
+        // but we could also just make a second/3rd buffer
+        // and dynamically populate all 4 instead
+        // the code isnt too far off being able to do that anwyay
+        // instead of linearly just spilling into the next, we just fill like
+        // buf1: [0,4,8,12,...]
+        // buf2: [1,5,9,13,...]
+        // buf3: [2,6,10,14,...]
+        // buf4: [3,7,11,15,...]
+        // just like how we manually calculate the candidate padding for the single buffer, we just change that so it splits among the 4
         let pixel_score_buffer_size = buffer_utils::get_padded_buffer_size::<f32>(
             cfg.candidates_per_generation
                 * cfg.extra_data.target_dimensions.0 as usize

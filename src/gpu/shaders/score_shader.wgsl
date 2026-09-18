@@ -29,15 +29,19 @@ fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let candidate_index = global_id.x;
     let p_x = global_id.y;
     let p_y = global_id.z;
-
     let canvas_texture_size = textureDimensions(input_canvas_texture);
 
+    // Sometimes more threads get allocated than the number of candidates we actually have, so just end early if we're an excess thread
     if candidate_index >= arrayLength(&input_candidates) {
         return;
     }
+    // Ditto for the shader's y and z dimensions 
     if p_x >= canvas_texture_size.x || p_y >= canvas_texture_size.y {
         return;
     }
+    // NOTE: also dont worry about "but does that mean there's excess space in the candidate_pixel_scores buffer?
+    // No, because we calculate it's size wayy before spinning up the shader or anything
+    // if we let these excess threads attempt to place an output, it would actually be trying to use an OOB index
 
     let this_candidate = input_candidates[candidate_index];
     let coords = vec2<u32>(p_x, p_y);
@@ -186,45 +190,89 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
     return vec4<f32>(result_rgb, rgba.a);
 }
 
-var<workgroup> partial_sums: array<f32,256>;
+
+// Explanation for myself:
+// So the way shaders are structured, each workgroup contains a number of threads, so you essentially have:
+// for workgroup in 0..10
+// {
+//     for thread in 0..256
+//     {
+//         run_shader();
+//     }
+// }
+// so in our case, we assign one workgroup for each candidate, and 256 threads for each workgroup
+// so our params: workgroup_id , local_id;
+// just mean: "id of this workgroup(ranges from 0 - Candidate count)", "id of this thread inside the workgroup(ranges from 0-256 because we set it at that)"
+var<workgroup> thread_sums: array<f32,256>;
 @compute @workgroup_size(256)
 fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
-    let candidate_index = workgroup_id.x;
-    let thread_index = local_id.x;
-    
     let canvas_texture_size = textureDimensions(input_canvas_texture);
     let pixel_count = canvas_texture_size.x * canvas_texture_size.y;
-    let base = candidate_index * pixel_count;
 
-    var sum = 0.0;
+    let this_candidate_index = workgroup_id.x;
+    let this_thread_index = local_id.x;
 
-    // Each thread sums a portion of this candidate's pixels.
-    var i = thread_index;
+    // The giant array of data points is essentially split like:
+    // [candidate01 data..., candidate02 data..., ect..]
+    // so we need to move into our candidate's block of memory
+    // each candidate's block of memory contains as many values as there are pixels
+    let this_candidate_data_entry_offset = this_candidate_index * pixel_count;
 
-    while i < pixel_count {
-        sum += internal_candidate_pixel_scores[base + i];
-        i += 256u;
+    // And because each candidate data "block" is pixel_count wide, we need to limit accesses to this range:
+    let this_candidate_data_limit = this_candidate_data_entry_offset + pixel_count;
+    // Otherwise we're getting values from the next candidate over
+
+    // There's almost always going to be more than 256 values in our candidate's value block however, but we only have 256 threads to work with
+    // So first, we need to condense the values array down to 256 values
+    // We do this by summing each 256'th value in the array
+    var this_thread_sum = 0.0;
+    for (var i = this_thread_index; i < this_candidate_data_limit; i += 256) {
+        this_thread_sum += internal_candidate_pixel_scores[this_candidate_data_entry_offset + i];
     }
 
-    partial_sums[thread_index] = sum;
+    // For a more visual explanation, suppose we only have 5 threads, and the image is 4x4 so we have 16 values per candidate
+    // internal_data -> [candidate 1 stuff.., candidate 2 stuff, this candidate stuff, candidate 4 stuf..., ...]
+    // (again it's just a big list of numbers, but effectivley it is split this way)
+    // this candidate stuff -> [4,6,2,1,2,3,5,2,1,2, 3, 2, 1, 2, 3, 5]
+    // 's indexes ->           [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    // 
+    // thread 0 will sum the values at index 0,5,10,15
+    // thread 1 will sum indexes             1,6,11,16
+    // thread 2:                             2,7,12
+    // thread 3:                             3,8,13
+    // thread 4:                             4,9,14
 
+    // now each thread has it's own sum , we store that in the thread_sums array, which is a per-workgroup array for this shader
+    // so like, workgroup 1 gets its own thread_sums array, workgroup 2 gets its own, ect
+    thread_sums[this_thread_index] = this_thread_sum;
+
+    // Now untill this point, each thread has been just doing its own thing,
+    // but we need to wait untill every thread has calculated it's sum and put it into it's index in thread_sums[].
+    // this function makes all threads wait untill theyre all caught up with eachother and at the exact same place
     workgroupBarrier();
 
-    // Parallel reduction.
-    var stride = 128u;
-
-    while stride > 0u {
-        if thread_index < stride {
-            partial_sums[thread_index] += partial_sums[thread_index + stride];
+    // Now comes the actual parralel reduction bit.
+    // Simply, threads 0 - 128 will grab two values from the array, add them, and store the result in their indexes
+    // then this is repeated with threads 0 - 64, and all the way down to one
+    // so for example, if there were 4 threads total, and the thread_sums were [25,50,10,40]
+    // thread 0 would grab 25 and 10, and store 35 in thread_sums[0]
+    // thread 1 grabs 50,40 and stores 90 in thread sums [1]
+    // and then on the next loop, only thread 0 runs, grabs 35 and 90, and stores 125 in thread_sums[0]
+    // and then the result is complete
+    var threads_remaining = u32(128);
+    while threads_remaining > 0 {
+        if this_thread_index < threads_remaining {
+            thread_sums[this_thread_index] += thread_sums[this_thread_index + threads_remaining];
         }
 
+        // Because we're working on the shared thread_sums array, we need to keep all the threads syncronised, so again,
+        // we tell them to wait untill every thread is ready, and then proceed
         workgroupBarrier();
-
-        stride /= 2u;
+        threads_remaining /= u32(2);
     }
 
-    // One final value for this candidate.
-    if thread_index == 0u {
-        output_score[candidate_index] = partial_sums[0];
+    // After everything, thread 0 stores it's result
+    if this_thread_index == 0 {
+        output_score[this_candidate_index] = thread_sums[0];
     }
 }

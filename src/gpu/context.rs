@@ -59,12 +59,13 @@ impl GpuContext {
         }
         // TODO: dynamically request whatever the maximum the gpu can support
         // also potentially error if the calculated candidate x pixel count would be too large
+        let limit = _adapter.limits().max_storage_buffer_binding_size;
         let mut device_descriptor = wgpu::DeviceDescriptor::default();
-        device_descriptor.required_limits.max_storage_buffer_binding_size = 2147483644; // OH YEAH
+        device_descriptor.required_limits.max_storage_buffer_binding_size = limit; // OH YEAH
         let (device, queue) =
             pollster::block_on(_adapter.request_device(&device_descriptor))?;
-        println!("{:?}",device);
-
+        println!("Max storage buffer binding size set to {} bytes",limit);
+        
         let buffers = Buffers::new(
             cfg,
             &device,
