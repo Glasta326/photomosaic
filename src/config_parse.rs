@@ -140,8 +140,8 @@ impl Default for Config {
             total_images: 500,
             mutation_strength: 0.1,
             extra_data: ConfigData::init(1200, 12),
-            enable_hue: true,
-            enable_video: true,
+            enable_hue: false,
+            enable_video: false,
         }
     }
 }

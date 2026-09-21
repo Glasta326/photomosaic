@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create the video writer, if enabled
     let mut video: Option<VideoWriter> = None;
-    if cfg.enable_hue {
+    if cfg.enable_video {
         video = Some(VideoWriter::new(&cfg, &context)?);
         if !VideoWriter::confirm_ffmpeg() {
             return Err("ffmpeg could not be found".into());
@@ -199,7 +199,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         // Write the frame into the video, if enabled
-        if cfg.enable_hue {
+        if cfg.enable_video {
             video_generation_sw.start(None);
             let img = buffer_utils::texture_to_u8(
                 &cfg,

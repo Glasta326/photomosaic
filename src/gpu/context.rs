@@ -61,17 +61,30 @@ impl GpuContext {
         // also potentially error if the calculated candidate x pixel count would be too large
         let storage_limit = _adapter.limits().max_storage_buffer_binding_size;
         let buffer_limit = _adapter.limits().max_buffer_size;
+        let invoc_limit = _adapter.limits().max_compute_invocations_per_workgroup;
+        let x_limit = _adapter.limits().max_compute_workgroup_size_x;
+        let texture_max = _adapter.limits().max_texture_dimension_2d;
         let mut device_descriptor = wgpu::DeviceDescriptor::default();
         device_descriptor
             .required_limits
             .max_storage_buffer_binding_size = storage_limit; // OH YEAH
         device_descriptor.required_limits.max_buffer_size = buffer_limit;
+        device_descriptor
+            .required_limits
+            .max_compute_invocations_per_workgroup = invoc_limit;
+        device_descriptor
+            .required_limits
+            .max_compute_workgroup_size_x = x_limit;
+        device_descriptor.required_limits.max_texture_dimension_2d = texture_max;
         let (device, queue) = pollster::block_on(_adapter.request_device(&device_descriptor))?;
         println!(
             "Max storage buffer binding size set to {} bytes",
             storage_limit
         );
         println!("Max buffer binding size set to {} bytes", buffer_limit);
+        println!("Max invocations set to {}", invoc_limit);
+        println!("Max x invocations set to {}", x_limit);
+        println!("Max atlas texture size set to {}", texture_max);
 
         let buffers = Buffers::new(
             cfg,

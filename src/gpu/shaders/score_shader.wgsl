@@ -223,8 +223,9 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
 // so in our case, we assign one workgroup for each candidate, and 256 threads for each workgroup
 // so our params: workgroup_id , local_id;
 // just mean: "id of this workgroup(ranges from 0 - Candidate count)", "id of this thread inside the workgroup(ranges from 0-256 because we set it at that)"
+const workgroup_size: u32 = 256;
 var<workgroup> thread_sums: array<f32,256>;
-@compute @workgroup_size(256)
+@compute @workgroup_size(workgroup_size)
 fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
     let canvas_texture_size = textureDimensions(input_canvas_texture);
     let pixel_count = canvas_texture_size.x * canvas_texture_size.y;
@@ -250,7 +251,7 @@ fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocat
     // So first, we need to condense the values array down to 256 values
     // We do this by summing each 256'th value in the array
     var this_thread_sum = 0.0;
-    for (var i = this_thread_index; i < pixel_count; i += 256) {
+    for (var i = this_thread_index; i < pixel_count; i += workgroup_size) {
         let index = this_candidate_data_entry_offset + i;
 
         if buffer_index == 0 {
@@ -296,7 +297,7 @@ fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocat
     // thread 1 grabs 50,40 and stores 90 in thread sums [1]
     // and then on the next loop, only thread 0 runs, grabs 35 and 90, and stores 125 in thread_sums[0]
     // and then the result is complete
-    var threads_remaining = u32(128);
+    var threads_remaining = u32(workgroup_size / 2);
     while threads_remaining > 0 {
         if this_thread_index < threads_remaining {
             thread_sums[this_thread_index] += thread_sums[this_thread_index + threads_remaining];

@@ -12,7 +12,7 @@ pub struct VideoWriter {
 }
 
 impl VideoWriter {
-    pub fn new(cfg: &Config, context: &GpuContext) -> std::io::Result<Self> {
+    pub fn new(cfg: &Config, context: &GpuContext) -> std::io::Result<Self> {        
         let file = format!(
             "{}",
             cfg.profile_log_fp

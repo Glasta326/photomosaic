@@ -26,17 +26,17 @@
     "program": "target/debug/photomosaic",
 
     "args": [
-      "-a", "debug/testing_input/atlas.png",
-      "-t", "debug/testing_input/bluestreet.jpg",
+      "-a", "debug/testing_input/itemAtlas.png",
+      "-t", "debug/testing_input/niko.png",
       "--profile_log", "debug/testing_output",
-      "--pixel_target", "20000",
+      "--pixel_target", "50000",
       //"--seed", "12504",
-      "--survival_threshold", "12",
+      "--survival_threshold", "20", // TODO: make this not an option and just calculate 1 or 2 % of the candidate count
       "--evolution_cycles", "12",
-      "--candidates", "1200",
-      "--total_images", "500",
+      "--candidates", "2000",
+      "--total_images", "800",
       "--mutation_strength","0.1",
-      "--hue_shift",
+      // "--hue_shift",
       "--video_gen"
       ],
 
