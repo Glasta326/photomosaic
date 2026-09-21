@@ -396,13 +396,6 @@ impl ScoreBuffers {
                 * cfg.extra_data.target_dimensions.1 as usize,
         );
 
-        let ttt = buffer_utils::get_padded_buffer_size::<f32>(
-            (cfg.candidates_per_generation)
-                * cfg.extra_data.target_dimensions.0 as usize
-                * cfg.extra_data.target_dimensions.1 as usize,
-        );
-        println!("buffer {} bytes",ttt);
-
         let internal_pixel_score_buffer_0 = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Score shader: Internal pixel score buffer 0"),
             size: pixel_score_buffer_size,
@@ -427,6 +420,11 @@ impl ScoreBuffers {
             usage: wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
+
+        println!(
+            "Internal score buffers each set to {} bytes",
+            pixel_score_buffer_size
+        );
 
         // Pre-calculate because it's used twice
         // Yeah i know the compiler will optimise it away anyway but let me have a win ok
