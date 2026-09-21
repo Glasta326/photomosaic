@@ -28,7 +28,7 @@
     "args": [
       "-a", "debug/testing_input/atlas.png",
       "-t", "debug/testing_input/bluestreet.jpg",
-      "-pl", "debug/testing_output",
+      "--profile_log", "debug/testing_output",
       "--pixel_target", "20000",
       //"--seed", "12504",
       "--survival_threshold", "12",

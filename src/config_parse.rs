@@ -127,21 +127,21 @@ video generation:   {}",
 impl Default for Config {
     fn default() -> Self {
         Self {
-            target_texture: PathBuf::from("debug/testing_input/target.png"),
-            atlas_texture_fp: PathBuf::from("debug/testing_input/atlas.png"),
-            atlas_json_fp: PathBuf::from("debug/testing_input/atlas.json"),
+            target_texture: PathBuf::from("target.png"),
+            atlas_texture_fp: PathBuf::from("atlas.png"),
+            atlas_json_fp: PathBuf::from("atlas.json"),
             profile_log_fp: std::env::current_dir()
                 .expect("The current working directory could not be opened."),
             pixel_target: 20000,
             seed: rand::random::<u64>(), // Default is random. Set-seeds would cause the same image each time
-            survival_threshold: 5,
-            evo_cycles: 10,
-            candidates_per_generation: 500,
-            total_images: 1000,
+            survival_threshold: 12,
+            evo_cycles: 12,
+            candidates_per_generation: 1200,
+            total_images: 500,
             mutation_strength: 0.1,
-            extra_data: ConfigData::init(500, 5),
-            enable_hue: false,
-            enable_video: false,
+            extra_data: ConfigData::init(1200, 12),
+            enable_hue: true,
+            enable_video: true,
         }
     }
 }
@@ -165,7 +165,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let default = Config::default();
     let mut target_file_path = default.target_texture;
     let mut atlas_file_path = default.atlas_texture_fp;
-    let mut atlas_json_path = default.atlas_json_fp;
+    let mut atlas_json_path = default.atlas_json_fp.clone();
     let mut profile_log_fp = default.profile_log_fp;
     let mut pixel_target = default.pixel_target;
     let mut seed = default.seed;
@@ -270,12 +270,10 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     }
 
     // If the atlas json path is still default, then use the same path as the atlas texture
-    if atlas_json_path == PathBuf::default() {
+    if atlas_json_path == default.atlas_json_fp.clone() {
         atlas_json_path = atlas_file_path.clone();
         atlas_json_path.set_extension("json");
     }
-
-    // Calculate the required downscale effect for the image
 
     safety_checks(
         &pixel_target,
