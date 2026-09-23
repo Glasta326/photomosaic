@@ -123,16 +123,28 @@ impl RuntimeStats {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let total_time_taken = self.total_time.elapsed();
 
-        // Initalise file and stringbuilder
-        let fp = cfg.profile_log_fp.join("performance_log.txt");
-        let mut f = File::create(&fp)?;
-        let mut text = String::new();
-
         // The file timestamp doesn't need nanosecond accuracy lol
         let timestamp = chrono::Local::now()
             .naive_local()
             .duration_round(TimeDelta::seconds(1))
             .unwrap();
+
+        // Initalise file and stringbuilder
+        let fp = format!(
+            "{}",
+            cfg.profile_log_fp
+                .join(format!(
+                    "{}_performance_log_{}",
+                    timestamp,
+                    cfg.target_texture.file_prefix().unwrap().to_string_lossy()
+                ))
+                .with_extension("txt")
+                .to_string_lossy()
+                .into_owned()
+        );
+        let mut f = File::create(&fp)?;
+        let mut text = String::new();
+
         // Header info
         text.push_str(
             format!(
@@ -211,7 +223,7 @@ impl RuntimeStats {
         );
 
         f.write_all(text.as_bytes())?;
-        println!("Runtime statistics saved to: {}", fp.display());
+        println!("Runtime statistics saved to: {}", fp);
 
         return Ok(());
     }

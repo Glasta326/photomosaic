@@ -132,12 +132,12 @@ impl Default for Config {
             atlas_json_fp: PathBuf::from("atlas.json"),
             profile_log_fp: std::env::current_dir()
                 .expect("The current working directory could not be opened."),
-            pixel_target: 20000,
+            pixel_target: 50000,
             seed: rand::random::<u64>(), // Default is random. Set-seeds would cause the same image each time
-            survival_threshold: 12,
+            survival_threshold: 20,
             evo_cycles: 12,
-            candidates_per_generation: 1200,
-            total_images: 500,
+            candidates_per_generation: 2000,
+            total_images: 800,
             mutation_strength: 0.1,
             extra_data: ConfigData::init(1200, 12),
             enable_hue: false,

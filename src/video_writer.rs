@@ -4,6 +4,8 @@ use std::{
     process::{Child, ChildStdin, Command, Stdio},
 };
 
+use chrono::{DurationRound, TimeDelta};
+
 use crate::{config_parse::Config, gpu::GpuContext};
 
 pub struct VideoWriter {
@@ -12,11 +14,20 @@ pub struct VideoWriter {
 }
 
 impl VideoWriter {
-    pub fn new(cfg: &Config, context: &GpuContext) -> std::io::Result<Self> {        
+    pub fn new(cfg: &Config, context: &GpuContext) -> std::io::Result<Self> {
+        let timestamp = chrono::Local::now()
+            .naive_local()
+            .duration_round(TimeDelta::seconds(1))
+            .unwrap();
+
         let file = format!(
             "{}",
             cfg.profile_log_fp
-                .join(cfg.target_texture.file_prefix().unwrap())
+                .join(format!(
+                    "{}_video_{}",
+                    timestamp,
+                    cfg.target_texture.file_prefix().unwrap().to_string_lossy()
+                ))
                 .with_extension("mp4")
                 .to_string_lossy()
                 .into_owned()

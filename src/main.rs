@@ -5,8 +5,9 @@ use std::{
     time::Duration,
 };
 
+use chrono::{DurationRound, TimeDelta};
 use rand::{SeedableRng, rngs::StdRng};
-use wgpu::naga::back::spv::SourceLanguage::Rust;
+use wgpu::{naga::back::spv::SourceLanguage::Rust, wgc::command::SimplifiedQueryType::Timestamp};
 
 use crate::{
     candidate::Candidate,
@@ -233,13 +234,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // TODO: Dynamic save location based on config
 fn save_output(cfg: &Config, context: &GpuContext) -> Result<(), Box<dyn std::error::Error>> {
+    let timestamp = chrono::Local::now()
+        .naive_local()
+        .duration_round(TimeDelta::seconds(1))
+        .unwrap();
+    let file = format!(
+        "{}",
+        cfg.profile_log_fp
+            .join(format!(
+                "{}_{}",
+                timestamp,
+                cfg.target_texture.file_prefix().unwrap().to_string_lossy()
+            ))
+            .with_extension("png")
+            .to_string_lossy()
+            .into_owned()
+    );
+
+    // Make sure to clear out the file if it already exists
+    if fs::exists(&file).is_ok_and(|x| x == true) {
+        fs::remove_file(&file)?;
+    }
+    // Save image
+    let img =
+        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.unscaled_canvas_texture)?;
+    img.save(&file)?;
+
+    // Debug internal view
     let img =
         buffer_utils::texture_to_image(&cfg, &context, &context.buffers.scaled_canvas_texture)?;
     img.save("debug/testing_output/test_output_internal.png")?;
-
-    let img =
-        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.unscaled_canvas_texture)?;
-    img.save("debug/testing_output/test_output.png")?;
 
     return Ok(());
 }

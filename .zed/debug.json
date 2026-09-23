@@ -27,7 +27,7 @@
 
     "args": [
       "-a", "debug/testing_input/itemAtlas.png",
-      "-t", "debug/testing_input/niko.png",
+      "-t", "/home/Glasta/Downloads/Screenshot 2026-09-22 at 22-24-40 Rain World Downpour Map.png",
       "--profile_log", "debug/testing_output",
       "--pixel_target", "50000",
       //"--seed", "12504",
@@ -36,7 +36,7 @@
       "--candidates", "2000",
       "--total_images", "800",
       "--mutation_strength","0.1",
-      // "--hue_shift",
+      //"--hue_shift",
       "--video_gen"
       ],
 
