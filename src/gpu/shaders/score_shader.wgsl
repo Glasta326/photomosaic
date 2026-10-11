@@ -4,7 +4,7 @@ struct AtlasEntry {
     width: u32,
     height: u32,
     rotated: u32,
-};
+}
 
 struct Candidate {
     texture_id: u32,
@@ -13,30 +13,43 @@ struct Candidate {
     rotation: f32,
     scale: f32,
     hue: f32,
-};
+    opacity: f32,
+}
 
-@group(0) @binding(0) var input_atlas_texture: texture_2d<f32>;
-@group(0) @binding(1) var<storage,read> input_atlas_entries: array<AtlasEntry>;
-@group(0) @binding(2) var input_target_texture: texture_2d<f32>;
-@group(0) @binding(3) var input_canvas_texture: texture_2d<f32>;
+@group(0) @binding(0)
+var input_atlas_texture: texture_2d<f32>;
+@group(0) @binding(1)
+var<storage, read> input_atlas_entries: array<AtlasEntry>;
+@group(0) @binding(2)
+var input_target_texture: texture_2d<f32>;
+@group(0) @binding(3)
+var input_canvas_texture: texture_2d<f32>;
 
-@group(0) @binding(4) var<storage,read> input_candidates: array<Candidate>;
+@group(0) @binding(4)
+var<storage, read> input_candidates: array<Candidate>;
 // Say NO to pesky gpu manufactures limiting your buffer size!
 // With this simple trick, you can quadruple your max buffer size!!
-@group(0) @binding(5) var<storage,read_write> internal_candidate_pixel_scores_0: array<f32>;
-@group(0) @binding(6) var<storage,read_write> internal_candidate_pixel_scores_1: array<f32>;
-@group(0) @binding(7) var<storage,read_write> internal_candidate_pixel_scores_2: array<f32>;
-@group(0) @binding(8) var<storage,read_write> internal_candidate_pixel_scores_3: array<f32>;
-@group(0) @binding(9) var<storage,read_write> output_score: array<f32>;
+@group(0) @binding(5)
+var<storage, read_write> internal_candidate_pixel_scores_0: array<f32>;
+@group(0) @binding(6)
+var<storage, read_write> internal_candidate_pixel_scores_1: array<f32>;
+@group(0) @binding(7)
+var<storage, read_write> internal_candidate_pixel_scores_2: array<f32>;
+@group(0) @binding(8)
+var<storage, read_write> internal_candidate_pixel_scores_3: array<f32>;
+@group(0) @binding(9)
+var<storage, read_write> output_score: array<f32>;
 
-@compute @workgroup_size(4,8,8)
+@compute @workgroup_size(4, 8, 8)
 fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let candidate_index = global_id.x;
     let p_x = global_id.y;
     let p_y = global_id.z;
     let canvas_texture_size = textureDimensions(input_canvas_texture);
 
-    let candidates_per_buffer = u32(ceil(f32(arrayLength(&input_candidates)) / 4.0)); // I believe standard u32 division ceil's by default but im paranoid
+    let candidates_per_buffer = u32(
+            ceil(f32(arrayLength(&input_candidates)) / 4.0),
+        ); // I believe standard u32 division ceil's by default but im paranoid
     let buffer_index = u32(floor(f32(candidate_index) / f32(candidates_per_buffer)));
     let local_candidate_index = candidate_index % candidates_per_buffer;
 
@@ -56,7 +69,9 @@ fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let coords = vec2<u32>(p_x, p_y);
 
     // Get the post-transform pixel from the atlas
-    let candidate_pixel_base = get_atlas_pixel_from_candidate(this_candidate, coords);
+    var candidate_pixel_base = get_atlas_pixel_from_candidate(this_candidate, coords);
+    candidate_pixel_base.a *= this_candidate.opacity; // see draw shader comment on this
+
     let candidate_pixel_hueshifted = shift_hue(candidate_pixel_base, this_candidate.hue);
 
     // Simulate drawing to the canvas
@@ -69,8 +84,13 @@ fn score_3D(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     // store output score for this candidate pixel
     let pixel_index = p_y * canvas_texture_size.x + p_x;
-    let output_index = local_candidate_index * (canvas_texture_size.x * canvas_texture_size.y) + pixel_index;
+    let output_index = local_candidate_index * (canvas_texture_size.x * canvas_texture_size.y)
+        + pixel_index;
 
+    place_score(buffer_index, output_index, score);
+}
+
+fn place_score(buffer_index: u32, output_index: u32, score: f32) {
     if buffer_index == 0 {
         internal_candidate_pixel_scores_0[output_index] = score;
     }
@@ -132,28 +152,28 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
 
     // Ensure we are inside the atlas region for this candidate
     // Dont forget it's texture-local so (0,0) is the top-left of the texture inside the atlas
-    if p.x < 0.0 ||
-        p.y < 0.0 ||
-        p.x >= f32(atlas_region.width) ||
-        p.y >= f32(atlas_region.height) {
-        return vec4<f32>(0.0);
+    if p.x < 0.0 || p.y < 0.0 || p.x >= f32(atlas_region.width) || p.y >= f32(atlas_region.height) {
+        return vec4<f32>(
+                0.0,
+            ); // Note we dont do that -1.0 trick from the draw_shader because we cant easily return early here
     }
 
     // If this texture is rotated inside the atlas we need to account for that
     var sample_coord = p;
     if atlas_region.rotated == 1u {
-        sample_coord = vec2<f32>(
-            f32(atlas_region.height) - 1.0 - p.y,
-            p.x
-        );
+        sample_coord = vec2<f32>(f32(atlas_region.height) - 1.0 - p.y, p.x);
     }
 
     // p is texture local space, so we add it to the absolute position of the region to get the coordinate of the pixel we want to sample
-    let atlas_coord = vec2<u32>(atlas_region.x + u32(sample_coord.x), atlas_region.y + u32(sample_coord.y));
+    let atlas_coord = vec2<u32>(
+            atlas_region.x + u32(sample_coord.x),
+            atlas_region.y + u32(sample_coord.y),
+        );
 
     return textureLoad(input_atlas_texture, atlas_coord, 0);
 }
 
+// Only affects rgb, a is unchanged
 fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
     let rgb = rgba.rgb;
 
@@ -224,16 +244,21 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
 // so our params: workgroup_id , local_id;
 // just mean: "id of this workgroup(ranges from 0 - Candidate count)", "id of this thread inside the workgroup(ranges from 0-256 because we set it at that)"
 const workgroup_size: u32 = 256;
-var<workgroup> thread_sums: array<f32,256>;
+var<workgroup> thread_sums: array<f32, 256>;
 @compute @workgroup_size(workgroup_size)
-fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
+fn reduce(
+    @builtin(workgroup_id) workgroup_id: vec3<u32>,
+    @builtin(local_invocation_id) local_id: vec3<u32>,
+) {
     let canvas_texture_size = textureDimensions(input_canvas_texture);
     let pixel_count = canvas_texture_size.x * canvas_texture_size.y;
 
     let this_candidate_index = workgroup_id.x;
     let this_thread_index = local_id.x;
 
-    let candidates_per_buffer = u32(ceil(f32(arrayLength(&input_candidates)) / 4.0)); // I believe standard u32 division ceil's by default but im paranoid
+    let candidates_per_buffer = u32(
+            ceil(f32(arrayLength(&input_candidates)) / 4.0),
+        ); // I believe standard u32 division ceil's by default but im paranoid
     let buffer_index = u32(floor(f32(this_candidate_index) / f32(candidates_per_buffer)));
     let local_candidate_index = this_candidate_index % candidates_per_buffer;
 
@@ -251,7 +276,7 @@ fn reduce(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocat
     // So first, we need to condense the values array down to 256 values
     // We do this by summing each 256'th value in the array
     var this_thread_sum = 0.0;
-    for (var i = this_thread_index; i < pixel_count; i += workgroup_size) {
+    for(var i = this_thread_index; i < pixel_count; i += workgroup_size) {
         let index = this_candidate_data_entry_offset + i;
 
         if buffer_index == 0 {

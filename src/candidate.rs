@@ -23,18 +23,27 @@ pub struct Candidate {
     /// The rotation in radians of this candidate texture. 0.000 means unchanged rotation
     pub rotation: f32,
 
-    /// The scaling effect applied to this candidate texture. 1.000x means unchanged size
+    /// The scaling effect applied to this candidate texture. 1.000 means unchanged size
     pub scale: f32,
 
     /// Hue shift value. 0.000 means unchanged color
     pub hue: f32,
+
+    /// Opacity value. 0.000 means invisible
+    pub opacity: f32,
 }
 impl std::fmt::Display for Candidate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}\nHue: {}",
-            self.texture_id, self.pos_x, self.pos_y, self.rotation, self.scale, self.hue
+            "ID: {}\nX: {}\nY: {}\nRot: {}\nScale: {}\nHue: {}\nOpacity: {}",
+            self.texture_id,
+            self.pos_x,
+            self.pos_y,
+            self.rotation,
+            self.scale,
+            self.hue,
+            self.opacity
         )
     }
 }
@@ -48,12 +57,13 @@ impl std::fmt::Debug for Candidate {
             .field("rotation", &self.rotation)
             .field("scale", &self.scale)
             .field("hue", &self.hue)
+            .field("opacity", &self.opacity)
             .finish()
     }
 }
 
 impl Candidate {
-    pub fn new(id: u32, x: f32, y: f32, rot: f32, scale: f32, hue: f32) -> Self {
+    pub fn new(id: u32, x: f32, y: f32, rot: f32, scale: f32, hue: f32, opacity: f32) -> Self {
         return Candidate {
             texture_id: id,
             pos_x: x,
@@ -61,9 +71,11 @@ impl Candidate {
             rotation: rot,
             scale,
             hue,
+            opacity,
         };
     }
 
+    // OBSOLETE
     pub fn mutate_new(&self, cfg: &Config, rng: &mut StdRng, strength: f32) -> Self {
         // Generate a random position inside the canvas,
         // then, lerp between our current position x,y to the new position x,y individiually to get the final position
@@ -109,6 +121,7 @@ impl Candidate {
             new_ang,
             new_scale,
             new_hue,
+            1.0,
         );
     }
 
@@ -127,6 +140,7 @@ impl Candidate {
                     0.0
                 }
             },
+            opacity: rng.random_range(cfg.opacity_min..=cfg.opacity_max),
         };
     }
 }
@@ -138,13 +152,14 @@ mod tests {
     use super::*;
     use rand::SeedableRng;
 
+    // TODO: Update for candidate generation via shader
     #[test]
     fn candidate_mutation_boundary() {
         let mut cfg = Config::default();
         cfg.extra_data.atlas_dimensions = (500, 500);
         cfg.extra_data.target_dimensions = (500, 500);
         let mut rng = StdRng::seed_from_u64(cfg.seed);
-        let mut c = Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let mut c = Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
         // Hypothetically if you set this high enough it will eventually fail due to chance
         // a value of ~ 1000 means that if it were to be overly biased, lets say it doubles 75% of the time
@@ -177,5 +192,9 @@ mod tests {
             "Candidate hue outside 0.0 - 360 range!\nCandidate hue: [{}]",
             c.hue
         );
+
+        // assert!(
+        //     c.opacity
+        // )
     }
 }

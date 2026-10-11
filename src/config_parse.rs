@@ -19,7 +19,9 @@ pub struct Config {
     pub profile_log_fp: PathBuf,
 
     /// The target image will be internally downscaled to reach this pixel target
+    ///
     /// For example, a 1920x1080 image has ~2,000,000 pixels, so if the pixel_target is 10k, it will be downscaled by ~14x
+    ///
     /// ~14x is because the total pixel count scales n², so to reduce by a factor of 200, you need to downscale by sqrt(200) ≈ 14
     pub pixel_target: u32,
 
@@ -40,6 +42,16 @@ pub struct Config {
 
     /// Controls how strong the mutation effects are, 0.0 means no change and 1.0 means children and maximially different
     pub mutation_strength: f32,
+
+    /// Maxmimum opacity the candidates can have, 1.0 means fully opaque and visible.
+    ///
+    /// Cannot go lower than opacity_min, or higher than 1.0
+    pub opacity_max: f32,
+
+    /// Minimum opacity the candidates can have, 0.0 means fully transparent and invisible
+    ///
+    /// Cannot go lower than 0.0, or higher than opacity_max
+    pub opacity_min: f32,
 
     /// Toggles the ability for images to have hue shift mutations
     pub enable_hue: bool,
@@ -105,6 +117,8 @@ evolution cycles:   {}
 candidates:         {}
 total images:       {}
 mutation strength:  {}
+opacity max:        {}
+opacity min:        {}
 hue shifting:       {}
 video generation:   {}",
             self.target_texture.display(),
@@ -118,6 +132,8 @@ video generation:   {}",
             self.candidates_per_generation,
             self.total_images,
             self.mutation_strength,
+            self.opacity_max,
+            self.opacity_min,
             self.enable_hue,
             self.enable_video
         );
@@ -139,7 +155,9 @@ impl Default for Config {
             candidates_per_generation: 2000,
             total_images: 800,
             mutation_strength: 0.1,
-            extra_data: ConfigData::init(1200, 12),
+            opacity_max: 1.0,
+            opacity_min: 0.0,
+            extra_data: ConfigData::init(2000, 20),
             enable_hue: false,
             enable_video: false,
         }
@@ -174,6 +192,8 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut candidates_per_gen: usize = default.candidates_per_generation;
     let mut total_images: usize = default.total_images;
     let mut mutation_strength = default.mutation_strength;
+    let mut opacity_max = default.opacity_max;
+    let mut opacity_min = default.opacity_min;
     let mut hue_shift = default.enable_hue;
     let mut video_gen = default.enable_video;
 
@@ -257,6 +277,20 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                 ))?;
                 mutation_strength = ms.to_string_lossy().into_owned().parse::<f32>()?;
             }
+            "-omax" | "--opacity_max" => {
+                let omax = args.next().ok_or(format!(
+                    "{} was used, but no opacity value was provided.\nHint: use -h or --help for info",
+                    arg.display()
+                ))?;
+                opacity_max = omax.to_string_lossy().into_owned().parse::<f32>()?;
+            }
+            "-omin" | "--opacity_min" => {
+                let omax = args.next().ok_or(format!(
+                    "{} was used, but no opacity value was provided.\nHint: use -h or --help for info",
+                    arg.display()
+                ))?;
+                opacity_min = omax.to_string_lossy().into_owned().parse::<f32>()?;
+            }
             "-h" | "--hue_shift" => {
                 hue_shift = true;
             }
@@ -280,6 +314,8 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         &mut survival_threshold,
         &mut candidates_per_gen,
         &mut mutation_strength,
+        &mut opacity_max,
+        &mut opacity_min,
     )?;
 
     // Calculate extra miscelaneous data from user specified configuration
@@ -299,6 +335,8 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         candidates_per_generation: candidates_per_gen,
         total_images,
         mutation_strength,
+        opacity_max,
+        opacity_min,
         enable_hue: hue_shift,
         extra_data: extra_data,
         enable_video: video_gen,
@@ -311,6 +349,8 @@ fn safety_checks(
     survival_threshold: &mut usize,
     candidates_per_gen: &mut usize,
     mutation_strength: &mut f32,
+    opacity_max: &mut f32,
+    opacity_min: &mut f32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if *pixel_target <= 0 {
         return Err(format!("pixel_target is {}, which is not allowed!", *pixel_target).into());
@@ -336,6 +376,7 @@ fn safety_checks(
         *candidates_per_gen += *survival_threshold - offset;
     }
 
+    // range check mutation strength
     if *mutation_strength < 0.0 || *mutation_strength > 1.0 {
         println!(
             "Automatically clamped mutation strength to {} as it was {}, which is outside the bounds of [0.0, 1.0]",
@@ -343,6 +384,32 @@ fn safety_checks(
             *mutation_strength
         );
         *mutation_strength = mutation_strength.clamp(0.0, 1.0);
+    }
+
+    // First clamp both opacity values between [0.0,1.0]
+    if *opacity_max > 1.0 || *opacity_max < 0.0 {
+        println!(
+            "Automatically clamped maximum opacity to {} as it was {}, which is outside the bounds of [0.0, 1.0]",
+            opacity_max.clamp(0.0, 1.0),
+            *opacity_max
+        );
+        *opacity_max = opacity_max.clamp(0.0, 1.0)
+    }
+    if *opacity_min > 1.0 || *opacity_min < 0.0 {
+        println!(
+            "Automatically clamped maximum opacity to {} as it was {}, which is outside the bounds of [0.0, 1.0]",
+            opacity_min.clamp(0.0, 1.0),
+            *opacity_min
+        );
+        *opacity_min = opacity_min.clamp(0.0, 1.0)
+    }
+    // Then ensure max >= min
+    if *opacity_max < *opacity_min {
+        println!(
+            "Automatically adjusted maxmimum opacity to {} as it was {} which is less than opacity_min",
+            *opacity_min, *opacity_max
+        );
+        *opacity_max = *opacity_min
     }
 
     return Ok(());

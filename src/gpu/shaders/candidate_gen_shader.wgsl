@@ -6,6 +6,8 @@ struct ProgramState {
     random_seed: u32,
     target_dimensions_x: u32,
     target_dimensions_y: u32,
+    opacity_max: f32,
+    opacity_min: f32,
 }
 
 struct Candidate {
@@ -15,15 +17,19 @@ struct Candidate {
     rotation: f32,
     scale: f32,
     hue: f32,
-};
+    opacity: f32,
+}
 
 const TAU = 6.28318530717958647692528676655900577;
 const PI = 3.14159265358979323846264338327950288;
-@group(0) @binding(0) var<uniform> state: ProgramState;
-@group(0) @binding(1) var<storage,read> input_candidates: array<Candidate>;
-@group(0) @binding(2) var<storage,read_write> output_candidates: array<Candidate>;
+@group(0) @binding(0)
+var<uniform> state: ProgramState;
+@group(0) @binding(1)
+var<storage, read> input_candidates: array<Candidate>;
+@group(0) @binding(2)
+var<storage, read_write> output_candidates: array<Candidate>;
 
-@compute @workgroup_size(16,16)
+@compute @workgroup_size(16, 16)
 fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let parent_index = global_id.x;
     let child_index = global_id.y;
@@ -31,18 +37,16 @@ fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let parent_candidate = input_candidates[parent_index];
 
     // oob is bad!
-    if (parent_index >= state.surivial_threshold || child_index >= state.child_count + 1){
+    if parent_index >= state.surivial_threshold || child_index >= state.child_count + 1 {
         return;
     }
 
     var rng = state.random_seed + output_index;
-    
 
     // Insert the parent into the end slot
     if child_index == state.child_count {
         output_candidates[output_index] = parent_candidate;
-    }
-    else {
+    } else {
         output_candidates[output_index] = gen_child_candidate(parent_candidate, &rng);
     }
 
@@ -67,14 +71,30 @@ fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // output_candidates[boundary] = parent_candidate;
 }
 
-fn gen_child_candidate(parent: Candidate, rng: ptr<function,u32>) -> Candidate {
+// Hi hello future glasta
+// ok so for opacity we defo want a opacity range option
+// so like
+// min_opacity = 0.2, max_opacity = 0.9 or whatever
+// settable as CLI args, like everything else
+// because you get thigns looky crazy different with low opacities compared to high ones
+// but for maximum "just make it look the same" youll probably want the program to get the whole 0.0 to 1.0 range
+// anyway point is we dont need to implement range RNG in the shader
+// we can exclusivley care about the range when generating the new, fully random candidate
+// and then when the child is made, just increase/decrease it in a similar fasion to scaling and rotation RNG
+// perhaps, a given mut_stren, the parent has opacity 0.67, we pick a random amount between 0 - mut_stren, add/subtract it from parent opacity
+// and dont forget to clamp between min_opacity and max_opacity!!!
+// so that way the opacity should naturally shift towards the ideal value over the generations
+// obv min_ and max_ opacity default to 0.0 and 1.0 respectivley
+
+fn gen_child_candidate(parent: Candidate, rng: ptr<function, u32>) -> Candidate {
     // Generate a random position inside the canvas,
     // then, lerp between our current position x,y to the new position x,y individiually to get the final position
-    let random_pos = random_point_2d(vec2<u32>(state.target_dimensions_x, state.target_dimensions_y), rng);
+    let random_pos =
+        random_point_2d(vec2<u32>(state.target_dimensions_x, state.target_dimensions_y), rng);
     let new_pos = vec2<f32>(
-        lerp(parent.pos_x, random_pos.x, state.mutation_strength),
-        lerp(parent.pos_y, random_pos.y, state.mutation_strength)
-    );
+            lerp(parent.pos_x, random_pos.x, state.mutation_strength),
+            lerp(parent.pos_y, random_pos.y, state.mutation_strength),
+        );
 
     // For angle, we want to either rotate left or right, and an amount decided by a range, with the limit on that range being affected by mutation strength
     // so for example, if we are at angle 0.0, we randomly choose to rotate clockwise, and mutation strength is 0.2, so we pick an amount to rotate
@@ -90,8 +110,7 @@ fn gen_child_candidate(parent: Candidate, rng: ptr<function,u32>) -> Candidate {
     var new_scale = parent.scale;
     if coinflip(rng) == 1 {
         new_scale *= mult;
-    }
-    else {
+    } else {
         new_scale /= mult;
     }
 
@@ -104,11 +123,29 @@ fn gen_child_candidate(parent: Candidate, rng: ptr<function,u32>) -> Candidate {
         new_hue = degrees(new_hue_angle);
     }
 
-    return Candidate(parent.texture_id, new_pos.x, new_pos.y, new_ang, new_scale, new_hue);
+    // Treat similarly to picking x and y positions
+    // the valid opacity has a range:
+    // 0.9 ------------------------------------------------------------------ 1.0
+    //          ^ randomly chosen opacity                        ^ parent's opacity
+    //                                  <------------------------ lerp
+    // we lerp towards a newly random chosen point within the range, lerping by the mutation strength
+    let opacity_range = state.opacity_max - state.opacity_min;
+    let point_in_range = (opacity_range * next_f32(rng)) + state.opacity_min;
+    let new_opacity = lerp(parent.opacity, point_in_range, state.mutation_strength);
+
+    return Candidate(
+            parent.texture_id,
+            new_pos.x,
+            new_pos.y,
+            new_ang,
+            new_scale,
+            new_hue,
+            new_opacity,
+        );
 }
 
 // Random u32
-fn next_u32(state: ptr<function,u32>) -> u32 {
+fn next_u32(state: ptr<function, u32>) -> u32 {
     var x = *state;
     x = x ^ (x << 13);
     x = x ^ (x >> 7);
@@ -119,17 +156,16 @@ fn next_u32(state: ptr<function,u32>) -> u32 {
 }
 
 // Random f32 from 0.0 - 1.0
-fn next_f32(state: ptr<function,u32>) -> f32 {
+fn next_f32(state: ptr<function, u32>) -> f32 {
     return f32(next_u32(state)) / 4294967295.0;
 }
 
 // Random i32 of either 1 or -1
-fn coinflip(state: ptr<function,u32>) -> i32 {
+fn coinflip(state: ptr<function, u32>) -> i32 {
     let r = next_f32(state) >= 0.5;
     if r {
         return 1;
-    }
-    else {
+    } else {
         return -1;
     }
 }
@@ -140,7 +176,7 @@ fn lerp(value1: f32, value2: f32, amount: f32) -> f32 {
 }
 
 /// Returns a random point on a given x,y sized plane inclusively
-fn random_point_2d(plane_size: vec2<u32>, rng: ptr<function,u32>) -> vec2<f32> {
+fn random_point_2d(plane_size: vec2<u32>, rng: ptr<function, u32>) -> vec2<f32> {
     // Fun fact, [..=] is the "range inclusive" operator, so doing 0..=10 means from 0 to 10 inclusive
     let x = next_f32(rng) * f32(plane_size.x);
     let y = next_f32(rng) * f32(plane_size.y);

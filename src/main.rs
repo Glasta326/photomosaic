@@ -12,7 +12,7 @@ use wgpu::{naga::back::spv::SourceLanguage::Rust, wgc::command::SimplifiedQueryT
 use crate::{
     candidate::Candidate,
     config_parse::Config,
-    datastructs::ShiftRegister,
+    datastructs::ShiftRegister128,
     gpu::GpuContext,
     profiling::{Dropwatch, Metric, RuntimeStats, Stopwatch},
     utils::{buffer_utils, math_utils},
@@ -78,10 +78,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut candidates: Vec<Candidate> =
-        vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
+        vec![Candidate::new(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0); cfg.candidates_per_generation];
     let mut candidate_scores: Vec<f32> = Vec::with_capacity(cfg.candidates_per_generation);
     let mut tracked_best_score = f32::INFINITY;
-    let mut recent_history = ShiftRegister::new();
+    let mut recent_history = ShiftRegister128::new();
 
     performance.record(Metric::Initialization, initialization_sw.elapse());
 
@@ -138,80 +138,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Ensure winner is actually an improvment
-        let mut winner = candidates[0];
+        // Display this generation step's progress
+        let winner = candidates[0];
         let current_winning_score = candidate_scores[0];
-
-        // Terminal progress information and register updates
-        let scale_factor = cfg.total_images as f32 / 100.0;
-        let filled = i as f32 / 5.0 / scale_factor;
-        let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
-        print!("\x1b[4A");
-        print!(
-            "\r\x1b[2KProgress: [{}{}] {}/{}\n",
-            "=".repeat(filled.round() as usize),
-            " ".repeat(empty.round() as usize),
-            i,
-            cfg.total_images
-        );
-        // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
-        // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
-        print!(
-            "\r\x1b[2KBest score: {:.4}\nCurrent iteration score: {:.4}{}\n",
-            tracked_best_score
-                / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
-            current_winning_score
-                / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
-            {
-                // Updating the score tracker and recent history inside a fucking print statement isnt ideal but whatever
-                if tracked_best_score >= current_winning_score {
-                    tracked_best_score = current_winning_score;
-                    recent_history.push(false);
-                    "\x1b[1;32m↓\x1b[0m" // buncha ansi code stuff, \x1b[1;32m just means "print bold green" and \x1b[0m just means "go back to normal"
-                } else {
-                    recent_history.push(true);
-                    "\x1b[1;31m↑\x1b[0m"
-                }
-            }
-        );
-        print!(
-            "\r\x1b[2KRecent failure percent: {:.1}%\n",
-            (recent_history.fullness()) * 100.0
-        );
-        std::io::Write::flush(&mut std::io::stdout()).unwrap();
-
-        // Draw the winning candidate onto the internal canvas
-        draw_shader.run_small(
-            &mut performance,
-            &context,
-            &winner,
-            &context.buffers.scaled_canvas_texture,
-        )?;
-
-        // Scale up the winner's position and scale for the output canvas
-        winner.scale *= cfg.extra_data.downscale_factor;
-        winner.pos_x *= cfg.extra_data.downscale_factor;
-        winner.pos_y *= cfg.extra_data.downscale_factor;
-        draw_shader.run_large(
-            &mut performance,
-            &context,
-            &winner,
-            &context.buffers.unscaled_canvas_texture,
-        )?;
-
-        // Write the frame into the video, if enabled
-        if cfg.enable_video {
-            video_generation_sw.start(None);
-            let img = buffer_utils::texture_to_u8(
-                &cfg,
-                &context,
-                &context.buffers.unscaled_canvas_texture,
-            )?;
-            if let Some(video_writer) = &mut video {
-                video_writer.write_frame(img)?;
-            }
-            performance.record(Metric::VideoGeneration, video_generation_sw.elapse());
-        }
+        show_progress_info(&cfg, &mut tracked_best_score, &mut recent_history, i, current_winning_score);
+        
+        
+        apply_candidate(&mut performance, &mut video_generation_sw, &cfg, &context, &draw_shader, &mut video, winner)?;
 
         i += 1;
     }
@@ -230,6 +163,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Done!");
     return Ok(());
+}
+
+/// Takes the winning candidate and draws it to the canvases, as well as inserting the next video frame if applicable
+fn apply_candidate(performance: &mut RuntimeStats, video_generation_sw: &mut Stopwatch, cfg: &Config, context: &GpuContext, draw_shader: &gpu::DrawShader, video: &mut Option<VideoWriter>, mut winner: Candidate) -> Result<(), Box<dyn std::error::Error + 'static>> {
+    // Update internal working canvas
+    draw_shader.run_small(
+        performance,
+        context,
+        &winner,
+        &context.buffers.scaled_canvas_texture,
+    )?;
+
+    // Update output canvas
+    winner.scale *= cfg.extra_data.downscale_factor;
+    winner.pos_x *= cfg.extra_data.downscale_factor;
+    winner.pos_y *= cfg.extra_data.downscale_factor;
+    draw_shader.run_large(
+        performance,
+        context,
+        &winner,
+        &context.buffers.unscaled_canvas_texture,
+    )?;
+
+    // If video is enabled, write the frame to the file
+    if cfg.enable_video {
+        video_generation_sw.start(None);
+        let img = buffer_utils::texture_to_u8(
+            cfg,
+            context,
+            &context.buffers.unscaled_canvas_texture,
+        )?;
+        if let Some(video_writer) = video {
+            video_writer.write_frame(img)?;
+        }
+        performance.record(Metric::VideoGeneration, video_generation_sw.elapse());
+    }
+    return Ok(());
+}
+
+/// Displays live console information about how the image generation is going
+fn show_progress_info(cfg: &Config, tracked_best_score: &mut f32, recent_history: &mut ShiftRegister128, i: usize, current_winning_score: f32) {
+    // Terminal progress information and register updates
+    let scale_factor = cfg.total_images as f32 / 100.0;
+    let filled = i as f32 / 5.0 / scale_factor;
+    let empty = (cfg.total_images as f32 / 5.0 / scale_factor) - filled;
+    print!("\x1b[4A");
+    print!(
+        "\r\x1b[2KProgress: [{}{}] {}/{}\n",
+        "=".repeat(filled.round() as usize),
+        " ".repeat(empty.round() as usize),
+        i,
+        cfg.total_images
+    );
+    // Because the downscale factor F reduces the number of pixels by F², we need to remultiply twice to normalise the score regardless of factor
+    // internally the value doesnt matter, as we just need to know if one is bigger than another, but smaller images having lower scores is misleading for debugging / users
+    print!(
+        "\r\x1b[2KBest score: {:.4}\nCurrent iteration score: {:.4}{}\n",
+        *tracked_best_score
+            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+        current_winning_score
+            / (cfg.extra_data.target_dimensions.0 * cfg.extra_data.target_dimensions.1) as f32,
+        {
+            // Updating the score tracker and recent history inside a fucking print statement isnt ideal but whatever
+            if *tracked_best_score >= current_winning_score {
+                *tracked_best_score = current_winning_score;
+                recent_history.push(false);
+                "\x1b[1;32m↓\x1b[0m" // buncha ansi code stuff, \x1b[1;32m just means "print bold green" and \x1b[0m just means "go back to normal"
+            } else {
+                recent_history.push(true);
+                "\x1b[1;31m↑\x1b[0m"
+            }
+        }
+    );
+    print!(
+        "\r\x1b[2KRecent failure percent: {:.1}%\n",
+        (recent_history.fullness()) * 100.0
+    );
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
 }
 
 // TODO: Dynamic save location based on config
@@ -260,10 +271,10 @@ fn save_output(cfg: &Config, context: &GpuContext) -> Result<(), Box<dyn std::er
         buffer_utils::texture_to_image(&cfg, &context, &context.buffers.unscaled_canvas_texture)?;
     img.save(&file)?;
 
-    // Debug internal view
-    let img =
-        buffer_utils::texture_to_image(&cfg, &context, &context.buffers.scaled_canvas_texture)?;
-    img.save("debug/testing_output/test_output_internal.png")?;
+    // // Debug internal view
+    // let img =
+    //     buffer_utils::texture_to_image(&cfg, &context, &context.buffers.scaled_canvas_texture)?;
+    // img.save(&file)?;
 
     return Ok(());
 }

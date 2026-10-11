@@ -46,6 +46,8 @@ struct ProgramState {
     random_seed: u32,
     target_dimensions_x: u32,
     target_dimensions_y: u32,
+    opacity_max: f32,
+    opacity_min: f32
 }
 
 impl CandidateGenShader {
@@ -227,7 +229,7 @@ impl CandidateBuffers {
     fn new(cfg: &Config, context: &GpuContext) -> Self {
         let program_state_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Candidate gen shader: Program state buffer"),
-            size: buffer_utils::get_padded_buffer_size::<ProgramState>(1), // we only take in the top n candidates
+            size: buffer_utils::get_padded_buffer_size::<ProgramState>(1), 
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -279,6 +281,8 @@ impl ProgramState {
             random_seed: rng.next_u32(),
             target_dimensions_x: cfg.extra_data.target_dimensions.0,
             target_dimensions_y: cfg.extra_data.target_dimensions.1,
+            opacity_max: cfg.opacity_max,
+            opacity_min: cfg.opacity_min
         };
     }
 }

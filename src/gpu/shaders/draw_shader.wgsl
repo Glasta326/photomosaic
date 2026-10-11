@@ -12,7 +12,8 @@ struct Candidate {
     pos_y: f32,
     rotation: f32,
     scale: f32,
-    hue: f32
+    hue: f32,
+    opacity: f32,
 };
 
 @group(0) @binding(0) var input_atlas_texture: texture_2d<f32>;
@@ -30,9 +31,28 @@ fn process(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (coords.x >= size.x || coords.y >= size.y) {
         return;
     }
+
+    var candidate_pixel_base = get_atlas_pixel_from_candidate(input_candidate, coords);
+    // Speed things up by returning early if this pixel shouldn't be drawn
+    if (candidate_pixel_base.a == -1.0){
+        return;
+    }
+    // Apply opacity
+    // Note how we multiply and not just override it
+    // Not entirely sure whether overriding would be better or not
+    candidate_pixel_base.a *= input_candidate.opacity;
     
-    let candidate_pixel_base = get_atlas_pixel_from_candidate(input_candidate, coords);
-    let candidate_pixel_hueshifted = shift_hue(candidate_pixel_base, input_candidate.hue);
+    // NOTE for future glasta hi hello
+    // So an important thing to remember is that when we call get_atlas_pixel_from_candidate, it grabs ALL the pixels
+    // ik its supposed to return if we're outside the size bounds but evidently not because if it set pixel.a to 0.5
+    // what happens is it just fill the image with the texture, and a shitload of black pixels every frame
+    // presumably because 99% of the pixels are (0,0,0,1), which is entirely invisible
+    // but when i set a = 0.5, suddenly its (0,0,0,0.5), which is a half visible black!
+    // so uh
+    // yeah keep that in mind
+    // also ZERO alpha means fully visible, ONE alpha means transparent
+    // i think
+    var candidate_pixel_hueshifted = shift_hue(candidate_pixel_base, input_candidate.hue);
     
     let canvas_pixel = textureLoad(canvas_texture, coords, 0);
     let result = draw(candidate_pixel_hueshifted, canvas_pixel);
@@ -78,7 +98,7 @@ fn get_atlas_pixel_from_candidate(candidate: Candidate, coords: vec2<u32>) -> ve
         p.y < 0.0 ||
         p.x >= f32(atlas_region.width) ||
         p.y >= f32(atlas_region.height) {
-        return vec4<f32>(0.0);
+        return vec4<f32>(-1.0); // We check in the main function for any -1.0's and return early so this is fine
     }
 
     // p is texture local space, so we add it to the absolute position of the region to get the coordinate of the pixel we want to sample
@@ -122,8 +142,8 @@ fn shift_hue(rgba: vec4<f32>, hue_shift: f32) -> vec4<f32> {
     let h = hue / 60.0;
     let x = chroma * (1.0 - abs((h % 2.0) - 1.0));
 
+    // I'll be honest i dont really know how this rbg hsv whatever stuff works but it works so im not touching it
     var rgb_prime = vec3<f32>(0.0);
-
     if (h < 1.0) {
         rgb_prime = vec3<f32>(chroma, x, 0.0);
     } else if (h < 2.0) {
