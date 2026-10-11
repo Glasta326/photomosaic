@@ -28,9 +28,6 @@ pub struct Config {
     /// Random seed
     pub seed: u64,
 
-    /// Any candidates below this threshold are removed from the evolution cycle
-    pub survival_threshold: usize,
-
     /// The number of evolutionary cycles for each image placed to the canvas
     pub evo_cycles: usize,
 
@@ -67,6 +64,10 @@ pub struct ConfigData {
     pub target_dimensions: (u32, u32),
     /// The target image will be internally downscaled by this amount to match the pixel target
     pub downscale_factor: f32,
+    /// Any candidates below this threshold are removed from the evolution cycle.
+    /// 
+    /// Threshold is calculates as 1.5% of the candidate count
+    pub survival_threshold: usize,
     pub child_count: usize,
     pub atlas_entry_count: u32,
 }
@@ -78,11 +79,13 @@ impl std::fmt::Display for ConfigData {
 atlas dimensions:  {:?}
 target dimensions: {:?}
 downscale factor:  {}
+survival threshold:{}
 child count:       {}
 atlas_entry_count: {}",
             self.atlas_dimensions,
             self.target_dimensions,
             self.downscale_factor,
+            self.survival_threshold,
             self.child_count,
             self.atlas_entry_count
         )?;
@@ -91,12 +94,13 @@ atlas_entry_count: {}",
 }
 
 impl ConfigData {
-    pub fn init(candidate_count: usize, threshold: usize) -> Self {
+    pub fn init(candidate_count: usize, survival_threshold: usize) -> Self {
         return ConfigData {
             atlas_dimensions: (0, 0),
             target_dimensions: (0, 0),
             downscale_factor: -1.0,
-            child_count: (candidate_count as f32 / threshold as f32).round() as usize - 1, // -1 to account for the parent staying alive
+            survival_threshold,
+            child_count: (candidate_count as f32 / survival_threshold as f32).round() as usize - 1, // subtract 1 to account for the parent staying alive
             atlas_entry_count: 0,
         };
     }
@@ -112,7 +116,6 @@ atlas json:         {}
 profile log folder: {}
 pixel target:       {}
 seed:               {}
-survival threshold: {}
 evolution cycles:   {}
 candidates:         {}
 total images:       {}
@@ -127,7 +130,6 @@ video generation:   {}",
             self.profile_log_fp.display(),
             self.pixel_target,
             self.seed,
-            self.survival_threshold,
             self.evo_cycles,
             self.candidates_per_generation,
             self.total_images,
@@ -150,7 +152,6 @@ impl Default for Config {
                 .expect("The current working directory could not be opened."),
             pixel_target: 50000,
             seed: rand::random::<u64>(), // Default is random. Set-seeds would cause the same image each time
-            survival_threshold: 20,
             evo_cycles: 12,
             candidates_per_generation: 2000,
             total_images: 800,
@@ -187,7 +188,6 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
     let mut profile_log_fp = default.profile_log_fp;
     let mut pixel_target = default.pixel_target;
     let mut seed = default.seed;
-    let mut survival_threshold = default.survival_threshold;
     let mut evo_cycles: usize = default.evo_cycles;
     let mut candidates_per_gen: usize = default.candidates_per_generation;
     let mut total_images: usize = default.total_images;
@@ -241,13 +241,6 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
                     arg.display()
                 ))?;
                 seed = s.to_string_lossy().into_owned().parse::<u64>()?;
-            }
-            "-st" | "--survival_threshold" => {
-                let st = args.next().ok_or(format!(
-                    "{} was used, but no threshold value was provided.\nHint: use -h or --help for info",
-                    arg.display()
-                ))?;
-                survival_threshold = st.to_string_lossy().into_owned().parse::<usize>()?;
             }
             "-ec" | "--evolution_cycles" => {
                 let ec = args.next().ok_or(format!(
@@ -309,6 +302,11 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         atlas_json_path.set_extension("json");
     }
 
+    // Default to 1.5% of the candidate count
+    // Note how we create it initally based on the user-specified amount, and THEN adjust the candidate count in safety_checks to match the survival threshold,
+    // instead of adjusting the survival threshold around the candidate count
+    let mut survival_threshold = (candidates_per_gen as f32 * 0.15).ceil() as usize;
+
     safety_checks(
         &pixel_target,
         &mut survival_threshold,
@@ -320,7 +318,7 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
 
     // Calculate extra miscelaneous data from user specified configuration
     // TODO: this is bad
-    // the data in here is half calculated on init and half done later and thats bad coding
+    // the data in here is half calculated on init and half done later and thats terrible
     let extra_data = ConfigData::init(candidates_per_gen, survival_threshold);
 
     return Ok(Some(Config {
@@ -330,7 +328,6 @@ pub fn parse() -> Result<Option<Config>, Box<dyn std::error::Error>> {
         profile_log_fp,
         pixel_target,
         seed,
-        survival_threshold,
         evo_cycles,
         candidates_per_generation: candidates_per_gen,
         total_images,

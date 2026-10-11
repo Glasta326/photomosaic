@@ -187,7 +187,7 @@ impl CandidateGenShader {
         // Set up the compute pass
         // Needs its own scope because encoder.begin_compute_pass is a mutable borrow
         {
-            let workgroup_count_x = cfg.survival_threshold.div_ceil(16) as u32;
+            let workgroup_count_x = cfg.extra_data.survival_threshold.div_ceil(16) as u32;
             let workgroup_count_y = cfg.extra_data.child_count.div_ceil(16) as u32;
             // println!("Score shader: true workgroup count: {}", &workgroup_count);
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -236,7 +236,7 @@ impl CandidateBuffers {
 
         let candidate_data_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Candidate gen shader: Candidate data buffer"),
-            size: buffer_utils::get_padded_buffer_size::<Candidate>(cfg.survival_threshold), // we only take in the top n candidates
+            size: buffer_utils::get_padded_buffer_size::<Candidate>(cfg.extra_data.survival_threshold), // we only take in the top n candidates
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -274,7 +274,7 @@ impl CandidateBuffers {
 impl ProgramState {
     pub fn new(cfg: &Config, rng: &mut StdRng) -> Self {
         return ProgramState {
-            survival_threshold: cfg.survival_threshold as u32,
+            survival_threshold: cfg.extra_data.survival_threshold as u32,
             child_count: cfg.extra_data.child_count as u32,
             mutation_strength: cfg.mutation_strength,
             hue_enabled: if cfg.enable_hue { 1 } else { 0 },

@@ -118,8 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if e < cfg.evo_cycles {
                 // We go down the list of candidates in desceding order, untill we hit our limit determined by the survival threshold
                 // Each of these candidates is allowed to create children, and then both the candidate and the child is moved into the new array
-                let mut parents: Vec<Candidate> = Vec::with_capacity(cfg.survival_threshold);
-                for j in 0..cfg.survival_threshold {
+                let mut parents: Vec<Candidate> = Vec::with_capacity(cfg.extra_data.survival_threshold);
+                for j in 0..cfg.extra_data.survival_threshold {
                     let index = indicies[j];
                     let candidate = candidates[index];
                     parents.push(candidate);
